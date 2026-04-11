@@ -16,9 +16,14 @@ const filters: Array<{ label: string; value: "all" | ConversationCategory }> = [
   { label: "Soporte humano", value: "soporte humano" },
 ];
 
+const initialNotesByConversation = Object.fromEntries(
+  conversations.map((conversation) => [conversation.id, conversation.internalNotes]),
+);
+
 export function ConversationsClient() {
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]["value"]>("all");
   const [selectedId, setSelectedId] = useState(conversations[0]?.id ?? "");
+  const [notesByConversation, setNotesByConversation] = useState<Record<string, string>>(initialNotesByConversation);
 
   const filtered = useMemo(
     () => conversations.filter((c) => (activeFilter === "all" ? true : c.category === activeFilter)),
@@ -59,7 +64,9 @@ export function ConversationsClient() {
                   <p className="font-semibold">{conversation.customerName}</p>
                   <p className="text-xs text-zinc-400">{conversation.phone}</p>
                 </div>
-                <p className="text-xs text-zinc-500">{new Date(conversation.updatedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</p>
+                <p className="text-xs text-zinc-500">
+                  {new Date(conversation.updatedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+                </p>
               </div>
               <p className="mt-2 text-sm text-zinc-300">{conversation.lastMessage}</p>
               <div className="mt-3 flex gap-2">
@@ -76,7 +83,9 @@ export function ConversationsClient() {
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h3 className="text-xl font-semibold">{selected.customerName}</h3>
-              <p className="text-sm text-zinc-400">{selected.businessName} · {selected.phone}</p>
+              <p className="text-sm text-zinc-400">
+                {selected.businessName} · {selected.phone}
+              </p>
             </div>
             <div className="flex gap-2">
               <CategoryBadge category={selected.category} />
@@ -90,7 +99,10 @@ export function ConversationsClient() {
           )}
           <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
             {selected.messages.map((message) => (
-              <div key={message.id} className={`max-w-[85%] rounded-xl p-3 text-sm ${message.sender === "customer" ? "bg-white/10" : message.sender === "system" ? "bg-cyan-500/20 ml-auto" : "ml-auto bg-emerald-500/20"}`}>
+              <div
+                key={message.id}
+                className={`max-w-[85%] rounded-xl p-3 text-sm ${message.sender === "customer" ? "bg-white/10" : message.sender === "system" ? "bg-cyan-500/20 ml-auto" : "ml-auto bg-emerald-500/20"}`}
+              >
                 <p>{message.content}</p>
                 <p className="mt-1 text-xs text-zinc-400">{message.timestamp}</p>
               </div>
@@ -98,7 +110,14 @@ export function ConversationsClient() {
           </div>
           <div className="mt-4">
             <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Notas internas</p>
-            <textarea defaultValue={selected.internalNotes} className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-zinc-200" />
+            <textarea
+              value={notesByConversation[selected.id] ?? ""}
+              onChange={(event) => {
+                const { value } = event.target;
+                setNotesByConversation((previous) => ({ ...previous, [selected.id]: value }));
+              }}
+              className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-zinc-200"
+            />
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
             <Button>Marcar en seguimiento</Button>
