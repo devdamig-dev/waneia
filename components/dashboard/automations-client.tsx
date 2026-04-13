@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Toast } from "@/components/ui/toast";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { automationRules } from "@/data/mock-data";
 import { ConversationCategory } from "@/types/entities";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 
 type RuleStatus = "activa" | "pausada" | "borrador";
 type RichRule = {
@@ -63,6 +64,7 @@ const tabOptions: Array<{ label: string; value: "todas" | RuleStatus }> = [
 ];
 
 export function AutomationsClient() {
+  const { activeWorkspaceId } = useWorkspace();
   const [rules, setRules] = useState<RichRule[]>(seedRules);
   const [tab, setTab] = useState<(typeof tabOptions)[number]["value"]>("todas");
   const [selectedId, setSelectedId] = useState(rules[0]?.id ?? "");
@@ -72,10 +74,16 @@ export function AutomationsClient() {
   const [openCreate, setOpenCreate] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const filteredRules = useMemo(() => rules.filter((r) => (tab === "todas" ? true : r.status === tab)), [rules, tab]);
+  const workspaceRules = useMemo(() => rules.filter((r) => automationRules.find((base) => base.id === r.id)?.workspaceId === activeWorkspaceId || r.id.startsWith("a-")), [rules, activeWorkspaceId]);
+  const filteredRules = useMemo(() => workspaceRules.filter((r) => (tab === "todas" ? true : r.status === tab)), [workspaceRules, tab]);
   const selected = filteredRules.find((rule) => rule.id === selectedId) ?? filteredRules[0];
 
   const [draft, setDraft] = useState<RichRule>(seedRules[0]);
+
+  useEffect(() => {
+    setSelectedId(filteredRules[0]?.id ?? "");
+    if (filteredRules[0]) setDraft(filteredRules[0]);
+  }, [activeWorkspaceId]);
   const [newRule, setNewRule] = useState({
     name: "",
     category: "consulta" as ConversationCategory,
