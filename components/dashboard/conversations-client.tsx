@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bot, CalendarClock, Sparkles, WandSparkles } from "lucide-react";
 import { conversations } from "@/data/mock-data";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConversationCategory } from "@/types/entities";
 import { Toast } from "@/components/ui/toast";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 
 const filters: Array<{ label: string; value: "all" | ConversationCategory }> = [
   { label: "Todas", value: "all" },
@@ -18,17 +19,23 @@ const filters: Array<{ label: string; value: "all" | ConversationCategory }> = [
   { label: "Soporte humano", value: "soporte humano" },
 ];
 
-const initialNotesByConversation = Object.fromEntries(conversations.map((c) => [c.id, c.internalNotes]));
 const initialScoreByConversation = Object.fromEntries(conversations.map((c, i) => [c.id, 55 + (i % 5) * 9]));
 
 export function ConversationsClient() {
+  const { activeWorkspaceId } = useWorkspace();
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]["value"]>("all");
-  const [selectedId, setSelectedId] = useState(conversations[0]?.id ?? "");
-  const [notesByConversation, setNotesByConversation] = useState<Record<string, string>>(initialNotesByConversation);
+  const [selectedId, setSelectedId] = useState("");
+  const [notesByConversation, setNotesByConversation] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
 
-  const filtered = useMemo(() => conversations.filter((c) => (activeFilter === "all" ? true : c.category === activeFilter)), [activeFilter]);
+  const workspaceConversations = useMemo(() => conversations.filter((c) => c.workspaceId === activeWorkspaceId), [activeWorkspaceId]);
+  const filtered = useMemo(() => workspaceConversations.filter((c) => (activeFilter === "all" ? true : c.category === activeFilter)), [activeFilter, workspaceConversations]);
   const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0];
+
+  useEffect(() => {
+    setSelectedId(filtered[0]?.id ?? "");
+    setNotesByConversation(Object.fromEntries(workspaceConversations.map((c) => [c.id, c.internalNotes])));
+  }, [activeWorkspaceId]);
 
   const urgencyByStatus: Record<string, "alta" | "media" | "baja"> = {
     nuevo: "alta",
