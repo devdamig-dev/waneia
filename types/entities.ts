@@ -1,5 +1,7 @@
+import { WorkspacePlan } from "@/types/workspace";
+
 export type ConversationCategory = "presupuesto" | "pedido" | "consulta" | "soporte humano";
-export type ConversationStatus = "nuevo" | "en seguimiento" | "esperando respuesta" | "cerrado";
+export type ConversationStatus = "nuevo" | "en seguimiento" | "esperando respuesta" | "cerrado" | "new" | "in progress" | "pending" | "won" | "lost" | "closed";
 
 export type Message = {
   id: string;
@@ -10,6 +12,8 @@ export type Message = {
 
 export type Conversation = {
   id: string;
+  workspaceId: string;
+  userId: string;
   customerName: string;
   phone: string;
   businessName: string;
@@ -28,6 +32,8 @@ export type LeadStatus = "nuevo" | "calificado" | "en propuesta" | "ganado" | "p
 
 export type Lead = {
   id: string;
+  workspaceId: string;
+  userId: string;
   name: string;
   phone: string;
   source: string;
@@ -40,10 +46,21 @@ export type Lead = {
 
 export type AutomationRule = {
   id: string;
+  workspaceId: string;
+  userId: string;
   name: string;
   trigger: string;
   action: string;
   active: boolean;
   category: ConversationCategory;
   confidence: number;
+};
+
+export type BusinessSettings = {
+  workspaceId: string;
+  plan: WorkspacePlan;
+  businessName: string;
+  industry: string;
+  timezone: string;
+  welcomeMessage: string;
 };

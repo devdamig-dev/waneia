@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { leads } from "@/data/mock-data";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Card } from "@/components/ui/card";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 
 export function LeadsClient() {
+  const { activeWorkspaceId } = useWorkspace();
   const [status, setStatus] = useState("todos");
   const [category, setCategory] = useState("todas");
 
@@ -14,10 +16,11 @@ export function LeadsClient() {
     () =>
       leads.filter(
         (lead) =>
+          lead.workspaceId === activeWorkspaceId &&
           (status === "todos" || lead.status === status) &&
           (category === "todas" || lead.category === category),
       ),
-    [status, category],
+    [status, category, activeWorkspaceId],
   );
 
   return (
