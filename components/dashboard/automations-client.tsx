@@ -31,6 +31,8 @@ type RichRule = {
   totalExecutions: number;
   exampleMessage: string;
   executionHistory: Array<{ id: string; detectedMessage: string; result: string; when: string }>;
+  conditions: string[];
+  lastTriggeredAt: string;
 };
 
 const seedRules: RichRule[] = automationRules.map((rule, index) => ({
@@ -54,6 +56,8 @@ const seedRules: RichRule[] = automationRules.map((rule, index) => ({
     { id: `${rule.id}-h1`, detectedMessage: "Necesito presupuesto", result: "Clasificado y respuesta enviada", when: "Hace 10 min" },
     { id: `${rule.id}-h2`, detectedMessage: "Quiero hablar con asesor", result: "Derivado a humano", when: "Hace 34 min" },
   ],
+  conditions: [rule.trigger, "Canal: WhatsApp", "Idioma: es-AR"],
+  lastTriggeredAt: "Hoy, 12:04",
 }));
 
 const tabOptions: Array<{ label: string; value: "todas" | RuleStatus }> = [
@@ -95,6 +99,7 @@ export function AutomationsClient() {
     routeToHuman: false,
     destinationQueue: "Bot IA",
     responseMessage: "",
+    conditions: "",
   });
 
   const loadRule = (id: string) => {
@@ -120,14 +125,24 @@ export function AutomationsClient() {
     setTimeout(() => {
       const created: RichRule = {
         id: `a-${Date.now()}`,
+        name: newRule.name || "Nueva regla",
+        category: newRule.category,
+        triggerType: newRule.triggerType,
+        triggerKeywords: newRule.triggerKeywords,
+        action: newRule.action,
+        priority: newRule.priority,
+        schedule: newRule.schedule,
+        destinationQueue: newRule.destinationQueue,
+        routeToHuman: newRule.routeToHuman,
+        responseMessage: newRule.responseMessage || "¡Gracias por escribir! Ya estamos procesando tu consulta.",
         status: "borrador",
         confidence: 80,
         lastExecuted: "Aún no ejecutada",
         totalExecutions: 0,
         exampleMessage: "¿Me pasás más información?",
         executionHistory: [],
-        ...newRule,
-        responseMessage: newRule.responseMessage || "¡Gracias por escribir! Ya estamos procesando tu consulta.",
+        conditions: newRule.conditions ? newRule.conditions.split(",").map((item) => item.trim()) : ["Condición inicial"],
+        lastTriggeredAt: "Sin ejecuciones",
       };
       setRules((prev) => [created, ...prev]);
       setSelectedId(created.id);
@@ -206,9 +221,19 @@ export function AutomationsClient() {
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <Card className="p-3"><p className="text-xs text-zinc-400">Última ejecución</p><p className="text-sm">{draft.lastExecuted}</p><p className="mt-1 text-xs text-zinc-500">Total ejecuciones: {draft.totalExecutions}</p></Card>
+              <Card className="p-3"><p className="text-xs text-zinc-400">Última ejecución</p><p className="text-sm">{draft.lastExecuted}</p><p className="mt-1 text-xs text-zinc-500">Last triggered: {draft.lastTriggeredAt}</p><p className="mt-1 text-xs text-zinc-500">Total ejecuciones: {draft.totalExecutions}</p></Card>
               <Card className="p-3"><p className="text-xs text-zinc-400">Ejemplo disparador</p><p className="text-sm">“{draft.exampleMessage}”</p><p className="mt-1 text-xs text-cyan-200">Motivo de clasificación: keywords detectadas</p></Card>
             </div>
+
+            <Card className="mt-3 p-3">
+              <p className="text-sm font-semibold">Conditions block</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {draft.conditions.map((condition) => (
+                  <span key={condition} className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-1 text-xs text-violet-100">{condition}</span>
+                ))}
+              </div>
+              <input disabled={!editing} value={draft.conditions.join(", ")} onChange={(e) => setDraft((p) => ({ ...p, conditions: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm" placeholder="Agregar condiciones separadas por coma" />
+            </Card>
 
             <Card className="mt-3 p-3">
               <p className="text-sm font-semibold">Vista previa de respuesta</p>
@@ -242,6 +267,7 @@ export function AutomationsClient() {
           <FormField label="Categoría"><select value={newRule.category} onChange={(e) => setNewRule((p) => ({ ...p, category: e.target.value as ConversationCategory }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5"><option value="presupuesto" className="bg-[#0b1023]">presupuesto</option><option value="pedido" className="bg-[#0b1023]">pedido</option><option value="consulta" className="bg-[#0b1023]">consulta</option><option value="soporte humano" className="bg-[#0b1023]">soporte humano</option></select></FormField>
           <FormField label="Trigger type"><input value={newRule.triggerType} onChange={(e) => setNewRule((p) => ({ ...p, triggerType: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
           <FormField label="Trigger keywords"><input value={newRule.triggerKeywords} onChange={(e) => setNewRule((p) => ({ ...p, triggerKeywords: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
+          <FormField label="Conditions block"><input value={newRule.conditions} onChange={(e) => setNewRule((p) => ({ ...p, conditions: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" placeholder="Canal: WhatsApp, País: AR" /></FormField>
           <FormField label="Acción automática"><textarea value={newRule.action} onChange={(e) => setNewRule((p) => ({ ...p, action: e.target.value }))} className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
           <FormField label="Mensaje de respuesta"><textarea value={newRule.responseMessage} onChange={(e) => setNewRule((p) => ({ ...p, responseMessage: e.target.value }))} className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
         </div>

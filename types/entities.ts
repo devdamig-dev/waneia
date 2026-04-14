@@ -1,7 +1,7 @@
 import { WorkspacePlan } from "@/types/workspace";
 
 export type ConversationCategory = "presupuesto" | "pedido" | "consulta" | "soporte humano";
-export type ConversationStatus = "nuevo" | "en seguimiento" | "esperando respuesta" | "cerrado";
+export type ConversationStatus = "nuevo" | "en seguimiento" | "esperando respuesta" | "cerrado" | "new" | "in progress" | "pending" | "won" | "lost" | "closed";
 
 export type Message = {
   id: string;

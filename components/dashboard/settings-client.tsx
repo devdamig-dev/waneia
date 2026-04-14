@@ -7,7 +7,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Toast } from "@/components/ui/toast";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 
-type SectionKey = "negocio" | "automatizaciones" | "mensajes" | "horarios" | "derivacion" | "branding" | "whatsapp";
+type SectionKey = "negocio" | "automatizaciones" | "mensajes" | "horarios" | "derivacion" | "branding" | "whatsapp" | "permisos";
 
 const sectionLabels: Record<SectionKey, string> = {
   negocio: "Negocio",
@@ -17,6 +17,7 @@ const sectionLabels: Record<SectionKey, string> = {
   derivacion: "Derivación a humano",
   branding: "Branding",
   whatsapp: "Integración WhatsApp",
+  permisos: "Roles y permisos",
 };
 
 type SettingsState = {
@@ -45,6 +46,10 @@ type SettingsState = {
   primaryColor: string;
   logoPlaceholder: string;
   whatsappStatus: "connected" | "pending" | "not-configured";
+  ownerCanManageBilling: boolean;
+  adminCanManageAutomations: boolean;
+  operatorCanCloseSales: boolean;
+  viewerCanExportReports: boolean;
 };
 
 const initialState: SettingsState = {
@@ -73,6 +78,10 @@ const initialState: SettingsState = {
   primaryColor: "#20f7b8",
   logoPlaceholder: "Logo principal (placeholder)",
   whatsappStatus: "pending",
+  ownerCanManageBilling: true,
+  adminCanManageAutomations: true,
+  operatorCanCloseSales: true,
+  viewerCanExportReports: false,
 };
 
 export function SettingsClient() {
@@ -165,6 +174,15 @@ export function SettingsClient() {
             <p className="mt-2 text-2xl font-semibold capitalize">{form.whatsappStatus.replace("-", " ")}</p>
             <p className="mt-2 text-sm text-zinc-300">Próximamente vas a conectar WhatsApp Business API desde esta pantalla. Por ahora podés usar el entorno demo con lógica simulada premium.</p>
           </Card>
+        );
+      case "permisos":
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Owner gestiona facturación</p><p className="text-xs text-zinc-400">Control de plan, método de pago y facturas.</p></div><ToggleSwitch checked={form.ownerCanManageBilling} onChange={(v) => setForm((p) => ({ ...p, ownerCanManageBilling: v }))} /></div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Admin administra automatizaciones</p><p className="text-xs text-zinc-400">Crear, editar y publicar flujos.</p></div><ToggleSwitch checked={form.adminCanManageAutomations} onChange={(v) => setForm((p) => ({ ...p, adminCanManageAutomations: v }))} /></div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Operator puede cerrar ventas</p><p className="text-xs text-zinc-400">Actualizar pipeline a won/lost.</p></div><ToggleSwitch checked={form.operatorCanCloseSales} onChange={(v) => setForm((p) => ({ ...p, operatorCanCloseSales: v }))} /></div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Viewer exporta reportes</p><p className="text-xs text-zinc-400">Acceso solo lectura + exportación CSV.</p></div><ToggleSwitch checked={form.viewerCanExportReports} onChange={(v) => setForm((p) => ({ ...p, viewerCanExportReports: v }))} /></div>
+          </div>
         );
       default:
         return null;
