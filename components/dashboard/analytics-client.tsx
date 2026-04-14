@@ -6,6 +6,7 @@ import { useWorkspace } from "@/components/dashboard/workspace-context";
 
 export function AnalyticsClient() {
   const { activeWorkspaceId } = useWorkspace();
+  // Keep analytics fully workspace-scoped for multi-tenant readiness.
   const workspaceConversations = conversations.filter((c) => c.workspaceId === activeWorkspaceId);
   const workspaceLeads = leads.filter((l) => l.workspaceId === activeWorkspaceId);
   const workspaceAutomations = automationRules.filter((a) => a.workspaceId === activeWorkspaceId);

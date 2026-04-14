@@ -43,7 +43,7 @@ export function ConversationsClient() {
   const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0];
 
   useEffect(() => {
-    setSelectedId(filtered[0]?.id ?? "");
+    setSelectedId(workspaceConversations[0]?.id ?? "");
     setPipelineByConversation(
       Object.fromEntries(
         workspaceConversations.map((conversation, index) => [
@@ -53,7 +53,7 @@ export function ConversationsClient() {
       ),
     );
     setOperatorByConversation(Object.fromEntries(workspaceConversations.map((conversation, index) => [conversation.id, operators[index % operators.length]])));
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, workspaceConversations]);
 
   const urgencyByStatus: Record<ConversationStatus, "alta" | "media" | "baja"> = {
     nuevo: "alta",
