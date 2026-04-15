@@ -7,7 +7,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Toast } from "@/components/ui/toast";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 
-type SectionKey = "negocio" | "automatizaciones" | "mensajes" | "horarios" | "derivacion" | "branding" | "whatsapp";
+type SectionKey = "negocio" | "automatizaciones" | "mensajes" | "horarios" | "derivacion" | "branding" | "whatsapp" | "permisos";
 
 const sectionLabels: Record<SectionKey, string> = {
   negocio: "Negocio",
@@ -17,6 +17,7 @@ const sectionLabels: Record<SectionKey, string> = {
   derivacion: "Derivación a humano",
   branding: "Branding",
   whatsapp: "Integración WhatsApp",
+  permisos: "Roles y permisos",
 };
 
 type SettingsState = {
@@ -45,6 +46,10 @@ type SettingsState = {
   primaryColor: string;
   logoPlaceholder: string;
   whatsappStatus: "connected" | "pending" | "not-configured";
+  ownerCanManageBilling: boolean;
+  adminCanManageAutomations: boolean;
+  operatorCanCloseSales: boolean;
+  viewerCanExportReports: boolean;
 };
 
 const initialState: SettingsState = {
@@ -73,6 +78,10 @@ const initialState: SettingsState = {
   primaryColor: "#20f7b8",
   logoPlaceholder: "Logo principal (placeholder)",
   whatsappStatus: "pending",
+  ownerCanManageBilling: true,
+  adminCanManageAutomations: true,
+  operatorCanCloseSales: true,
+  viewerCanExportReports: false,
 };
 
 export function SettingsClient() {
@@ -81,6 +90,7 @@ export function SettingsClient() {
   const [savedSnapshot, setSavedSnapshot] = useState<SettingsState>(initialState);
   const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState("Nunca");
 
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(savedSnapshot);
 
@@ -89,6 +99,7 @@ export function SettingsClient() {
     setTimeout(() => {
       setSavedSnapshot(form);
       setLoading(false);
+      setLastSavedAt(new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }));
       setToast(`${sectionLabels[active]} guardado correctamente.`);
     }, 700);
   };
@@ -166,6 +177,15 @@ export function SettingsClient() {
             <p className="mt-2 text-sm text-zinc-300">Próximamente vas a conectar WhatsApp Business API desde esta pantalla. Por ahora podés usar el entorno demo con lógica simulada premium.</p>
           </Card>
         );
+      case "permisos":
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Owner gestiona facturación</p><p className="text-xs text-zinc-400">Control de plan, método de pago y facturas.</p></div><ToggleSwitch checked={form.ownerCanManageBilling} onChange={(v) => setForm((p) => ({ ...p, ownerCanManageBilling: v }))} /></div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Admin administra automatizaciones</p><p className="text-xs text-zinc-400">Crear, editar y publicar flujos.</p></div><ToggleSwitch checked={form.adminCanManageAutomations} onChange={(v) => setForm((p) => ({ ...p, adminCanManageAutomations: v }))} /></div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Operator puede cerrar ventas</p><p className="text-xs text-zinc-400">Actualizar pipeline a won/lost.</p></div><ToggleSwitch checked={form.operatorCanCloseSales} onChange={(v) => setForm((p) => ({ ...p, operatorCanCloseSales: v }))} /></div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><div><p>Viewer exporta reportes</p><p className="text-xs text-zinc-400">Acceso solo lectura + exportación CSV.</p></div><ToggleSwitch checked={form.viewerCanExportReports} onChange={(v) => setForm((p) => ({ ...p, viewerCanExportReports: v }))} /></div>
+          </div>
+        );
       default:
         return null;
     }
@@ -175,6 +195,7 @@ export function SettingsClient() {
     <>
       <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
         <Card className="p-3">
+          <p className="mb-2 px-2 text-xs text-zinc-500">Configuración interna del workspace. Cada sección tiene impacto operativo directo.</p>
           {(Object.keys(sectionLabels) as SectionKey[]).map((section) => (
             <button key={section} onClick={() => setActive(section)} className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-sm transition ${active === section ? "bg-cyan-500/20 text-cyan-100" : "text-zinc-300 hover:bg-white/10"}`}>{sectionLabels[section]}</button>
           ))}
@@ -183,11 +204,12 @@ export function SettingsClient() {
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold">{sectionLabels[active]}</h3>
-            {hasUnsavedChanges ? <span className="rounded-full bg-amber-500/20 px-2 py-1 text-xs text-amber-100">Cambios sin guardar</span> : <span className="text-xs text-zinc-500">Todo guardado</span>}
+            {hasUnsavedChanges ? <span className="rounded-full bg-amber-500/20 px-2 py-1 text-xs text-amber-100">Cambios sin guardar</span> : <span className="text-xs text-zinc-500">Guardado {lastSavedAt}</span>}
           </div>
+          <p className="mb-3 text-xs text-zinc-500">Tip: usá \"Guardar cambios\" al finalizar cada bloque para evitar perder configuración crítica.</p>
           {sectionContent}
-          <div className="mt-6 grid grid-cols-2 gap-2">
-            <Button onClick={resetSection} disabled={!hasUnsavedChanges}>Cancelar / Reset</Button>
+          <div className="sticky bottom-0 mt-6 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-[#0b1023]/80 p-2 backdrop-blur">
+            <Button onClick={resetSection} disabled={!hasUnsavedChanges}>Reset sección</Button>
             <Button onClick={save} disabled={!hasUnsavedChanges || loading} className="bg-cyan-500/20 hover:bg-cyan-500/30">{loading ? "Guardando..." : "Guardar cambios"}</Button>
           </div>
         </Card>

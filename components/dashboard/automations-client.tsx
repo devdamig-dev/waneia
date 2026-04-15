@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Beaker, Copy, FlaskConical, PlayCircle } from "lucide-react";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,234 +11,172 @@ import { Toast } from "@/components/ui/toast";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { automationRules } from "@/data/mock-data";
 import { ConversationCategory } from "@/types/entities";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 
-type RuleStatus = "activa" | "pausada" | "borrador";
+type RuleStatus = "draft" | "testing" | "active" | "paused";
+type LogicOperator = "AND" | "OR";
+type Condition = { id: string; field: string; operator: string; value: string };
 type RichRule = {
   id: string;
+  workspaceId: string;
   name: string;
   category: ConversationCategory;
-  triggerType: string;
-  triggerKeywords: string;
+  triggerKeywords: string[];
+  conditions: Condition[];
+  logicOperator: LogicOperator;
   action: string;
-  priority: "alta" | "media" | "baja";
-  schedule: string;
-  destinationQueue: string;
-  routeToHuman: boolean;
   responseMessage: string;
-  confidence: number;
+  destinationQueue: string;
+  schedule: string;
+  routeToHuman: boolean;
   status: RuleStatus;
-  lastExecuted: string;
-  totalExecutions: number;
-  exampleMessage: string;
-  executionHistory: Array<{ id: string; detectedMessage: string; result: string; when: string }>;
+  confidence: number;
+  lastTriggeredAt: string;
+  executionHistory: Array<{ id: string; sample: string; outcome: string; when: string }>;
 };
 
 const seedRules: RichRule[] = automationRules.map((rule, index) => ({
   id: rule.id,
+  workspaceId: rule.workspaceId,
   name: rule.name,
   category: rule.category,
-  triggerType: "palabras clave",
-  triggerKeywords: rule.trigger,
+  triggerKeywords: rule.trigger.split(":").join(",").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 3),
+  conditions: [
+    { id: `${rule.id}-c1`, field: "canal", operator: "es", value: "whatsapp" },
+    { id: `${rule.id}-c2`, field: "idioma", operator: "es", value: "es-AR" },
+  ],
+  logicOperator: index % 2 === 0 ? "AND" : "OR",
   action: rule.action,
-  priority: index % 2 === 0 ? "alta" : "media",
-  schedule: "24/7",
+  responseMessage: "¡Gracias por escribir! Estamos procesando tu consulta.",
   destinationQueue: rule.category === "soporte humano" ? "Equipo Comercial" : "Bot IA",
+  schedule: "24/7",
   routeToHuman: rule.category === "soporte humano",
-  responseMessage: "¡Gracias por escribir! Ya detectamos tu consulta y te damos una respuesta precisa.",
+  status: rule.active ? "active" : "paused",
   confidence: rule.confidence,
-  status: rule.active ? "activa" : "pausada",
-  lastExecuted: "Hoy, 11:42",
-  totalExecutions: 48 + index * 9,
-  exampleMessage: "Hola, quería consultar precio",
+  lastTriggeredAt: "Hoy, 12:14",
   executionHistory: [
-    { id: `${rule.id}-h1`, detectedMessage: "Necesito presupuesto", result: "Clasificado y respuesta enviada", when: "Hace 10 min" },
-    { id: `${rule.id}-h2`, detectedMessage: "Quiero hablar con asesor", result: "Derivado a humano", when: "Hace 34 min" },
+    { id: `${rule.id}-h1`, sample: "Necesito precio", outcome: "Auto-respuesta enviada", when: "Hace 12 min" },
+    { id: `${rule.id}-h2`, sample: "Quiero hablar con asesor", outcome: "Derivado a humano", when: "Hace 40 min" },
   ],
 }));
 
-const tabOptions: Array<{ label: string; value: "todas" | RuleStatus }> = [
-  { label: "Todas", value: "todas" },
-  { label: "Activas", value: "activa" },
-  { label: "Pausadas", value: "pausada" },
-  { label: "Borradores", value: "borrador" },
-];
-
 export function AutomationsClient() {
-  const [rules, setRules] = useState<RichRule[]>(seedRules);
-  const [tab, setTab] = useState<(typeof tabOptions)[number]["value"]>("todas");
-  const [selectedId, setSelectedId] = useState(rules[0]?.id ?? "");
+  const { activeWorkspaceId } = useWorkspace();
+  const [rules, setRules] = useState(seedRules);
+  const [selectedId, setSelectedId] = useState(seedRules[0]?.id ?? "");
   const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState("");
   const [openCreate, setOpenCreate] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [toast, setToast] = useState("");
+  const [testMessage, setTestMessage] = useState("Quiero precio y tiempos de entrega");
 
-  const filteredRules = useMemo(() => rules.filter((r) => (tab === "todas" ? true : r.status === tab)), [rules, tab]);
-  const selected = filteredRules.find((rule) => rule.id === selectedId) ?? filteredRules[0];
+  const workspaceRules = useMemo(() => rules.filter((r) => r.workspaceId === activeWorkspaceId || r.id.startsWith("new-")), [rules, activeWorkspaceId]);
+  const selected = workspaceRules.find((rule) => rule.id === selectedId) ?? workspaceRules[0];
 
-  const [draft, setDraft] = useState<RichRule>(seedRules[0]);
-  const [newRule, setNewRule] = useState({
-    name: "",
-    category: "consulta" as ConversationCategory,
-    triggerType: "palabras clave",
-    triggerKeywords: "",
-    action: "Responder FAQ y solicitar datos.",
-    priority: "media" as RichRule["priority"],
-    schedule: "24/7",
-    routeToHuman: false,
-    destinationQueue: "Bot IA",
-    responseMessage: "",
-  });
-
-  const loadRule = (id: string) => {
-    const rule = rules.find((item) => item.id === id);
-    if (!rule) return;
-    setSelectedId(id);
-    setDraft(rule);
-    setEditing(false);
-  };
-
-  const saveRule = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setRules((prev) => prev.map((rule) => (rule.id === draft.id ? draft : rule)));
-      setEditing(false);
-      setSaving(false);
-      setToast("Regla guardada con éxito.");
-    }, 800);
-  };
-
-  const createRule = () => {
-    setCreating(true);
-    setTimeout(() => {
-      const created: RichRule = {
-        id: `a-${Date.now()}`,
-        status: "borrador",
-        confidence: 80,
-        lastExecuted: "Aún no ejecutada",
-        totalExecutions: 0,
-        exampleMessage: "¿Me pasás más información?",
-        executionHistory: [],
-        ...newRule,
-        responseMessage: newRule.responseMessage || "¡Gracias por escribir! Ya estamos procesando tu consulta.",
-      };
-      setRules((prev) => [created, ...prev]);
-      setSelectedId(created.id);
-      setDraft(created);
-      setOpenCreate(false);
-      setCreating(false);
-      setToast("Automatización creada como borrador.");
-    }, 900);
+  const updateRule = (next: RichRule) => setRules((prev) => prev.map((rule) => (rule.id === next.id ? next : rule)));
+  const duplicateRule = (rule: RichRule) => {
+    const duplicate: RichRule = { ...rule, id: `new-${Date.now()}`, name: `${rule.name} (copy)`, status: "draft" };
+    setRules((prev) => [duplicate, ...prev]);
+    setSelectedId(duplicate.id);
+    setToast("Automatización duplicada.");
   };
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2 rounded-xl border border-white/10 bg-white/5 p-1">
-          {tabOptions.map((option) => (
-            <button key={option.label} onClick={() => setTab(option.value)} className={`rounded-lg px-3 py-1.5 text-sm transition ${tab === option.value ? "bg-cyan-500/20 text-cyan-100" : "text-zinc-300 hover:bg-white/10"}`}>{option.label}</button>
-          ))}
-        </div>
-        <Button className="bg-emerald-500/20 hover:bg-emerald-500/30" onClick={() => setOpenCreate(true)}>Crear automatización</Button>
+        <p className="text-sm text-zinc-400">Builder V3: separá Trigger, Lógica y Acción para operar reglas de forma segura.</p>
+        <Button onClick={() => setOpenCreate(true)} className="bg-emerald-500/20 hover:bg-emerald-500/30">Nueva regla</Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_1.1fr]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_1.2fr]">
         <div className="space-y-3">
-          {filteredRules.map((rule) => (
-            <Card key={rule.id} onClick={() => loadRule(rule.id)} className={`cursor-pointer p-4 transition hover:-translate-y-0.5 hover:bg-white/10 ${selected?.id === rule.id ? "border-cyan-300/30 bg-cyan-500/10" : ""}`}>
-              <div className="flex items-start justify-between gap-3">
+          {workspaceRules.map((rule) => (
+            <Card key={rule.id} className={`cursor-pointer p-4 transition hover:-translate-y-0.5 hover:bg-white/10 ${selected?.id === rule.id ? "border-cyan-300/30 bg-cyan-500/10" : ""}`} onClick={() => { setSelectedId(rule.id); setEditing(false); }}>
+              <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-semibold">{rule.name}</p>
-                  <p className="text-xs text-zinc-400">{rule.triggerType} · Prioridad {rule.priority}</p>
+                  <p className="text-xs text-zinc-400">Queue {rule.destinationQueue} · Last trigger {rule.lastTriggeredAt}</p>
                 </div>
-                <span className={`rounded-full px-2 py-1 text-xs ${rule.status === "activa" ? "bg-emerald-500/20 text-emerald-100" : rule.status === "pausada" ? "bg-amber-500/20 text-amber-100" : "bg-zinc-500/20 text-zinc-200"}`}>{rule.status}</span>
+                <span className={`rounded-full px-2 py-1 text-xs ${rule.status === "active" ? "bg-emerald-500/20 text-emerald-100" : rule.status === "testing" ? "bg-violet-500/20 text-violet-100" : rule.status === "paused" ? "bg-amber-500/20 text-amber-100" : "bg-zinc-500/20 text-zinc-200"}`}>{rule.status}</span>
               </div>
-              <div className="mt-3 flex items-center justify-between">
-                <CategoryBadge category={rule.category} />
-                <span className="text-xs text-cyan-200">Confianza de automatización: {rule.confidence}%</span>
-              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs"><CategoryBadge category={rule.category} /><span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-cyan-100">{rule.logicOperator}</span><span className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-1 text-violet-100">{rule.conditions.length} condiciones</span></div>
             </Card>
           ))}
         </div>
 
         {selected ? (
           <Card className="p-5">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xl font-semibold">{selected.name}</h3>
               <div className="flex gap-2">
+                <Button onClick={() => duplicateRule(selected)} className="inline-flex gap-1"><Copy className="h-4 w-4" />Duplicar</Button>
                 <Button onClick={() => setEditing((v) => !v)}>{editing ? "Cancelar" : "Editar"}</Button>
-                <ToggleSwitch checked={draft.status === "activa"} onChange={(v) => setDraft((prev) => ({ ...prev, status: v ? "activa" : "pausada" }))} />
               </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
-              <FormField label="Nombre"><input disabled={!editing} value={draft.name} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-              <FormField label="Categoría">
-                <select disabled={!editing} value={draft.category} onChange={(e) => setDraft((p) => ({ ...p, category: e.target.value as ConversationCategory }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5">
-                  <option value="presupuesto" className="bg-[#0b1023]">presupuesto</option><option value="pedido" className="bg-[#0b1023]">pedido</option><option value="consulta" className="bg-[#0b1023]">consulta</option><option value="soporte humano" className="bg-[#0b1023]">soporte humano</option>
+              <FormField label="Estado">
+                <select value={selected.status} disabled={!editing} onChange={(e) => updateRule({ ...selected, status: e.target.value as RuleStatus })} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5">
+                  <option value="draft" className="bg-[#0b1023]">draft</option>
+                  <option value="testing" className="bg-[#0b1023]">testing</option>
+                  <option value="active" className="bg-[#0b1023]">active</option>
+                  <option value="paused" className="bg-[#0b1023]">paused</option>
                 </select>
               </FormField>
-              <FormField label="Trigger type"><input disabled={!editing} value={draft.triggerType} onChange={(e) => setDraft((p) => ({ ...p, triggerType: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-              <FormField label="Trigger keywords"><input disabled={!editing} value={draft.triggerKeywords} onChange={(e) => setDraft((p) => ({ ...p, triggerKeywords: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-              <FormField label="Prioridad">
-                <select disabled={!editing} value={draft.priority} onChange={(e) => setDraft((p) => ({ ...p, priority: e.target.value as RichRule["priority"] }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5">
-                  <option value="alta" className="bg-[#0b1023]">alta</option><option value="media" className="bg-[#0b1023]">media</option><option value="baja" className="bg-[#0b1023]">baja</option>
-                </select>
-              </FormField>
-              <FormField label="Horario de ejecución"><input disabled={!editing} value={draft.schedule} onChange={(e) => setDraft((p) => ({ ...p, schedule: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-              <FormField label="Canal / cola destino"><input disabled={!editing} value={draft.destinationQueue} onChange={(e) => setDraft((p) => ({ ...p, destinationQueue: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-              <FormField label="Confianza mínima (%)"><input type="number" disabled={!editing} value={draft.confidence} onChange={(e) => setDraft((p) => ({ ...p, confidence: Number(e.target.value || 0) }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-            </div>
-
-            <FormField label="Acción automática"><textarea disabled={!editing} value={draft.action} onChange={(e) => setDraft((p) => ({ ...p, action: e.target.value }))} className="mt-3 min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-            <FormField label="Mensaje de respuesta"><textarea disabled={!editing} value={draft.responseMessage} onChange={(e) => setDraft((p) => ({ ...p, responseMessage: e.target.value }))} className="mt-3 min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
-              <div><p>Derivar a humano</p><p className="text-xs text-zinc-400">Siguiente paso recomendado para casos sensibles</p></div>
-              <ToggleSwitch checked={draft.routeToHuman} onChange={(v) => setDraft((p) => ({ ...p, routeToHuman: v }))} />
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <Card className="p-3"><p className="text-xs text-zinc-400">Última ejecución</p><p className="text-sm">{draft.lastExecuted}</p><p className="mt-1 text-xs text-zinc-500">Total ejecuciones: {draft.totalExecutions}</p></Card>
-              <Card className="p-3"><p className="text-xs text-zinc-400">Ejemplo disparador</p><p className="text-sm">“{draft.exampleMessage}”</p><p className="mt-1 text-xs text-cyan-200">Motivo de clasificación: keywords detectadas</p></Card>
+              <FormField label="Categoría"><select value={selected.category} disabled={!editing} onChange={(e) => updateRule({ ...selected, category: e.target.value as ConversationCategory })} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5"><option value="presupuesto" className="bg-[#0b1023]">presupuesto</option><option value="pedido" className="bg-[#0b1023]">pedido</option><option value="consulta" className="bg-[#0b1023]">consulta</option><option value="soporte humano" className="bg-[#0b1023]">soporte humano</option></select></FormField>
             </div>
 
             <Card className="mt-3 p-3">
-              <p className="text-sm font-semibold">Vista previa de respuesta</p>
-              <p className="mt-2 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-zinc-300">{draft.responseMessage}</p>
+              <p className="text-sm font-semibold">1) Trigger</p>
+              <input disabled={!editing} value={selected.triggerKeywords.join(", ")} onChange={(e) => updateRule({ ...selected, triggerKeywords: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) })} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm" placeholder="precio, presupuesto, costo" />
+              <FormField label="Horario"><input disabled={!editing} value={selected.schedule} onChange={(e) => updateRule({ ...selected, schedule: e.target.value })} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm" /></FormField>
             </Card>
 
             <Card className="mt-3 p-3">
-              <p className="text-sm font-semibold">Últimos eventos</p>
+              <div className="flex items-center justify-between"><p className="text-sm font-semibold">2) Lógica</p><select value={selected.logicOperator} disabled={!editing} onChange={(e) => updateRule({ ...selected, logicOperator: e.target.value as LogicOperator })} className="rounded-xl border border-white/10 bg-white/5 p-2 text-xs"><option value="AND" className="bg-[#0b1023]">AND</option><option value="OR" className="bg-[#0b1023]">OR</option></select></div>
               <div className="mt-2 space-y-2">
-                {draft.executionHistory.length === 0 ? (
-                  <p className="text-xs text-zinc-500">Sin eventos todavía para esta regla.</p>
-                ) : draft.executionHistory.map((event) => (
-                  <div key={event.id} className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs">
-                    <p className="text-zinc-200">Mensaje detectado: {event.detectedMessage}</p>
-                    <p className="text-zinc-400">Resultado: {event.result} · {event.when}</p>
+                {selected.conditions.map((condition) => (
+                  <div key={condition.id} className="grid gap-2 rounded-lg border border-white/10 bg-white/5 p-2 md:grid-cols-3">
+                    <input disabled={!editing} value={condition.field} onChange={(e) => updateRule({ ...selected, conditions: selected.conditions.map((c) => c.id === condition.id ? { ...c, field: e.target.value } : c) })} className="rounded-lg border border-white/10 bg-black/20 p-2 text-xs" />
+                    <input disabled={!editing} value={condition.operator} onChange={(e) => updateRule({ ...selected, conditions: selected.conditions.map((c) => c.id === condition.id ? { ...c, operator: e.target.value } : c) })} className="rounded-lg border border-white/10 bg-black/20 p-2 text-xs" />
+                    <input disabled={!editing} value={condition.value} onChange={(e) => updateRule({ ...selected, conditions: selected.conditions.map((c) => c.id === condition.id ? { ...c, value: e.target.value } : c) })} className="rounded-lg border border-white/10 bg-black/20 p-2 text-xs" />
                   </div>
                 ))}
               </div>
+              <Button disabled={!editing} onClick={() => updateRule({ ...selected, conditions: [...selected.conditions, { id: `${selected.id}-c-${Date.now()}`, field: "campo", operator: "es", value: "valor" }] })} className="mt-2">Agregar condición</Button>
             </Card>
 
-            <Button disabled={!editing || saving} onClick={saveRule} className="mt-4 w-full bg-cyan-500/20 hover:bg-cyan-500/30">{saving ? "Guardando..." : "Guardar cambios"}</Button>
+            <Card className="mt-3 p-3">
+              <p className="text-sm font-semibold">3) Acción</p>
+              <FormField label="Destino"><input disabled={!editing} value={selected.destinationQueue} onChange={(e) => updateRule({ ...selected, destinationQueue: e.target.value })} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm" /></FormField>
+              <textarea disabled={!editing} value={selected.responseMessage} onChange={(e) => updateRule({ ...selected, responseMessage: e.target.value })} className="mt-2 min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm" />
+              <div className="mt-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"><span className="text-sm">Derivar a humano</span><ToggleSwitch checked={selected.routeToHuman} onChange={(v) => updateRule({ ...selected, routeToHuman: v })} /></div>
+            </Card>
+
+            <Card className="mt-3 p-3">
+              <p className="text-sm font-semibold inline-flex items-center gap-2"><FlaskConical className="h-4 w-4" /> Manual test mode</p>
+              <input value={testMessage} onChange={(e) => setTestMessage(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm" />
+              <Button className="mt-2 inline-flex gap-1" onClick={() => setToast(`Test ejecutado: ${selected.logicOperator} con ${selected.conditions.length} condiciones`) }><PlayCircle className="h-4 w-4" />Probar regla</Button>
+            </Card>
+
+            <Card className="mt-3 p-3">
+              <p className="text-sm font-semibold inline-flex items-center gap-2"><Beaker className="h-4 w-4" /> Historial de ejecuciones</p>
+              <div className="mt-2 space-y-2">{selected.executionHistory.map((h) => <div key={h.id} className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs"><p>{h.sample}</p><p className="text-zinc-400">{h.outcome} · {h.when}</p></div>)}</div>
+            </Card>
           </Card>
         ) : (
-          <Card className="p-6 text-sm text-zinc-400">No hay reglas para el filtro seleccionado.</Card>
+          <Card className="p-6 text-sm text-zinc-400">No hay automatizaciones para este workspace.</Card>
         )}
       </div>
 
-      <Modal open={openCreate} onClose={() => setOpenCreate(false)} title="Nueva automatización">
-        <div className="grid gap-3">
-          <FormField label="Nombre"><input value={newRule.name} onChange={(e) => setNewRule((p) => ({ ...p, name: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-          <FormField label="Categoría"><select value={newRule.category} onChange={(e) => setNewRule((p) => ({ ...p, category: e.target.value as ConversationCategory }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5"><option value="presupuesto" className="bg-[#0b1023]">presupuesto</option><option value="pedido" className="bg-[#0b1023]">pedido</option><option value="consulta" className="bg-[#0b1023]">consulta</option><option value="soporte humano" className="bg-[#0b1023]">soporte humano</option></select></FormField>
-          <FormField label="Trigger type"><input value={newRule.triggerType} onChange={(e) => setNewRule((p) => ({ ...p, triggerType: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-          <FormField label="Trigger keywords"><input value={newRule.triggerKeywords} onChange={(e) => setNewRule((p) => ({ ...p, triggerKeywords: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-          <FormField label="Acción automática"><textarea value={newRule.action} onChange={(e) => setNewRule((p) => ({ ...p, action: e.target.value }))} className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-          <FormField label="Mensaje de respuesta"><textarea value={newRule.responseMessage} onChange={(e) => setNewRule((p) => ({ ...p, responseMessage: e.target.value }))} className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5" /></FormField>
-        </div>
-        <Button onClick={createRule} disabled={creating} className="mt-4 w-full bg-emerald-500/20 hover:bg-emerald-500/30">{creating ? "Creando..." : "Crear automatización"}</Button>
+      <Modal open={openCreate} onClose={() => setOpenCreate(false)} title="Nueva automatización V3">
+        <p className="text-sm text-zinc-300">Se crea en estado <strong>draft</strong> para revisión segura antes de publicar.</p>
+        <Button className="mt-4 w-full" onClick={() => {
+          const created: RichRule = { id: `new-${Date.now()}`, workspaceId: activeWorkspaceId, name: "Nueva regla V3", category: "consulta", triggerKeywords: ["consulta"], conditions: [{ id: `c-${Date.now()}`, field: "canal", operator: "es", value: "whatsapp" }], logicOperator: "AND", action: "Responder y calificar", responseMessage: "Gracias por escribir", destinationQueue: "Bot IA", schedule: "24/7", routeToHuman: false, status: "draft", confidence: 80, lastTriggeredAt: "Sin ejecuciones", executionHistory: [] };
+          setRules((prev) => [created, ...prev]);
+          setSelectedId(created.id);
+          setOpenCreate(false);
+          setToast("Regla creada en draft.");
+        }}>Crear</Button>
       </Modal>
 
       <Toast message={toast} onClose={() => setToast("")} />
