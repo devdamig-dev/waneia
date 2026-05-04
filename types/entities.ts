@@ -3,12 +3,12 @@ import { WorkspacePlan } from "@/types/workspace";
 export type ConversationCategory = "presupuesto" | "pedido" | "consulta" | "soporte humano";
 
 export type ConversationStatus =
-  | "urgente"
-  | "sin responder"
-  | "en seguimiento"
+  | "nuevo"
+  | "en curso"
   | "pendiente"
-  | "ganada"
-  | "perdida";
+  | "ganado"
+  | "perdido"
+  | "cerrado";
 
 export type ConversationPriority = "alta" | "media" | "baja";
 
@@ -52,6 +52,8 @@ export type Conversation = {
   activity: ActivityEvent[];
   suggestedReply: string;
   nextTask: string;
+  nextTaskDueDate?: string;
+  linkedLeadId?: string;
 };
 
 export type LeadStage =

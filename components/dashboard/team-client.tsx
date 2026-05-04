@@ -101,7 +101,7 @@ export function TeamClient() {
               <th className="p-3">Miembro</th>
               <th className="p-3">Rol</th>
               <th className="p-3">Disponibilidad</th>
-              <th className="p-3">Workload</th>
+              <th className="p-3">Carga</th>
               <th className="p-3">Resueltas hoy</th>
               <th className="p-3">Tiempo respuesta</th>
               <th className="p-3">Última actividad</th>

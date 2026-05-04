@@ -29,7 +29,7 @@ import { StatusBadge } from "@/components/dashboard/status-badge";
 
 const quickActions = [
   { label: "Conversaciones", href: "/dashboard/conversaciones", icon: MessageCircleMore },
-  { label: "Pipeline", href: "/dashboard/leads", icon: TrendingUp },
+  { label: "Leads", href: "/dashboard/leads", icon: TrendingUp },
   { label: "Contactos", href: "/dashboard/contactos", icon: Users },
   { label: "Automatizaciones", href: "/dashboard/automatizaciones", icon: Bot },
   { label: "Campañas", href: "/dashboard/campanias", icon: Sparkles },
@@ -64,14 +64,14 @@ export function DashboardClient() {
       <Card className="p-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-cyan-200">Workspace overview</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-cyan-200">Resumen del workspace</p>
             <h2 className="mt-1 text-3xl font-bold">{activeWorkspace.name}</h2>
             <p className="mt-1 text-sm text-zinc-300">{activeWorkspace.industry} · {activeWorkspace.country} · Plan {activeWorkspace.plan}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-3 py-1 text-emerald-100">WhatsApp · {activeWorkspace.whatsappStatus}</span>
             <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-3 py-1 text-cyan-100">Onboarding {activeWorkspace.onboardingCompletion}%</span>
-            <Link href="/dashboard/onboarding" className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-200 hover:bg-white/10">Continuar setup <ArrowRight className="h-3.5 w-3.5" /></Link>
+            <Link href="/dashboard/onboarding" className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-zinc-200 hover:bg-white/10">Continuar configuración <ArrowRight className="h-3.5 w-3.5" /></Link>
           </div>
         </div>
 
@@ -89,10 +89,10 @@ export function DashboardClient() {
         <Card className="p-4">
           <p className="text-xs uppercase tracking-wide text-zinc-400">Conversaciones hoy</p>
           <p className="mt-1 text-3xl font-bold">{wsConversations.length}</p>
-          <p className="mt-1 text-xs text-emerald-300">{wsConversations.filter((c) => c.status === "ganada").length} ganadas · {wsConversations.filter((c) => c.status === "sin responder").length} sin responder</p>
+          <p className="mt-1 text-xs text-emerald-300">{wsConversations.filter((c) => c.status === "ganado").length} ganadas · {wsConversations.filter((c) => c.status === "nuevo").length} nuevas</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-zinc-400">Pipeline activo</p>
+          <p className="text-xs uppercase tracking-wide text-zinc-400">Embudo comercial</p>
           <p className="mt-1 text-3xl font-bold text-cyan-100">{formatCurrency(pipelineValue)}</p>
           <p className="mt-1 text-xs text-zinc-400">Cerrado este mes: {formatCurrency(wonValue)}</p>
         </Card>
@@ -112,7 +112,7 @@ export function DashboardClient() {
         <Card className="p-5 lg:col-span-2">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold inline-flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-rose-300" />Alertas SLA</p>
-            <Link href="/dashboard/conversaciones" className="text-xs text-cyan-200">Ver inbox <ArrowRight className="ml-1 inline h-3 w-3" /></Link>
+            <Link href="/dashboard/conversaciones" className="text-xs text-cyan-200">Ver conversaciones <ArrowRight className="ml-1 inline h-3 w-3" /></Link>
           </div>
           <div className="mt-3 space-y-2">
             {slaAlerts.length === 0 ? (
@@ -160,7 +160,7 @@ export function DashboardClient() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold inline-flex items-center gap-2"><Users className="h-4 w-4 text-cyan-300" />Workload del equipo</p>
+            <p className="text-sm font-semibold inline-flex items-center gap-2"><Users className="h-4 w-4 text-cyan-300" />Carga del equipo</p>
             <Link href="/dashboard/equipo" className="text-xs text-cyan-200">Ver equipo <ArrowRight className="ml-1 inline h-3 w-3" /></Link>
           </div>
           <div className="mt-3 space-y-2 text-xs">
@@ -185,7 +185,7 @@ export function DashboardClient() {
         </Card>
 
         <Card className="p-5">
-          <p className="text-sm font-semibold inline-flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-300" />Pipeline por etapa</p>
+          <p className="text-sm font-semibold inline-flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-300" />Embudo por etapa</p>
           <div className="mt-3 space-y-2 text-xs">
             {pipelineStages.map((s) => {
               const stageLeads = wsLeads.filter((l) => l.stage === s.id);

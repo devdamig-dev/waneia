@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, ChevronLeft, ChevronRight, Plus, Tag as TagIcon, X } from "lucide-react";
-import { leads as seedLeads, pipelineStages } from "@/data/mock-data";
+import Link from "next/link";
+import { CalendarClock, ChevronLeft, ChevronRight, ExternalLink, MessageCircleMore, Plus, Tag as TagIcon, X } from "lucide-react";
+import { conversations as seedConversations, contacts as seedContacts, leads as seedLeads, pipelineStages } from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Card } from "@/components/ui/card";
@@ -132,7 +133,7 @@ export function LeadsClient() {
       </Card>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Pipeline en curso</p><p className="mt-1 text-2xl font-bold text-cyan-100">{formatCurrency(totalPipelineValue)}</p></Card>
+        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Embudo en curso</p><p className="mt-1 text-2xl font-bold text-cyan-100">{formatCurrency(totalPipelineValue)}</p></Card>
         <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Cerrado este mes</p><p className="mt-1 text-2xl font-bold text-emerald-100">{formatCurrency(wonValue)}</p></Card>
         <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Leads activos</p><p className="mt-1 text-2xl font-bold">{workspaceLeads.filter((l) => l.stage !== "ganado" && l.stage !== "perdido").length}</p></Card>
       </div>
@@ -231,6 +232,37 @@ export function LeadsClient() {
                 {selected.tags.length === 0 ? <span className="text-xs text-zinc-500">Sin etiquetas</span> : null}
               </p>
             </Card>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {(() => {
+              const linkedConv = seedConversations.find((c) => c.id === selected.conversationId || c.linkedLeadId === selected.id || (c.contactId === selected.contactId && c.workspaceId === selected.workspaceId));
+              const linkedContact = seedContacts.find((c) => c.id === selected.contactId);
+              return (
+                <>
+                  {linkedConv ? (
+                    <Card className="p-3">
+                      <p className="text-xs uppercase tracking-wide text-zinc-400 inline-flex items-center gap-1"><MessageCircleMore className="h-3.5 w-3.5" /> Conversación origen</p>
+                      <p className="mt-2 text-sm font-medium">{linkedConv.customerName}</p>
+                      <p className="line-clamp-2 text-[11px] text-zinc-400">{linkedConv.lastMessage}</p>
+                      <p className="mt-1 text-[11px] text-zinc-400">Intent: {linkedConv.intent}</p>
+                      <Link href={`/dashboard/conversaciones?id=${linkedConv.id}`} className="mt-2 inline-flex items-center gap-1 text-[11px] text-cyan-200 hover:text-cyan-100">Abrir conversación <ExternalLink className="h-3 w-3" /></Link>
+                    </Card>
+                  ) : (
+                    <Card className="p-3 text-xs text-zinc-400"><p>Este lead no tiene conversación de origen vinculada.</p></Card>
+                  )}
+                  {linkedContact ? (
+                    <Card className="p-3">
+                      <p className="text-xs uppercase tracking-wide text-zinc-400">Contacto</p>
+                      <p className="mt-2 text-sm font-medium">{linkedContact.name}</p>
+                      <p className="text-[11px] text-zinc-400">{linkedContact.business} · {linkedContact.lifecycle}</p>
+                      <p className="text-[11px] text-zinc-400">Total conversaciones: {linkedContact.totalConversations}</p>
+                      <Link href={`/dashboard/contactos?id=${linkedContact.id}`} className="mt-2 inline-flex items-center gap-1 text-[11px] text-cyan-200 hover:text-cyan-100">Ver perfil <ExternalLink className="h-3 w-3" /></Link>
+                    </Card>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
 
           <Card className="mt-3 p-3">
