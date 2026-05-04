@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Bell, Search } from "lucide-react";
 import { workspaces } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
+import { BUILD_TAG } from "@/lib/version";
 
 const navItems = [
   { href: "/dashboard", label: "Inicio" },
@@ -14,6 +15,7 @@ const navItems = [
   { href: "/dashboard/automatizaciones", label: "Automatizaciones" },
   { href: "/dashboard/campanias", label: "Campañas" },
   { href: "/dashboard/analytics", label: "Analítica" },
+  { href: "/dashboard/integracion-whatsapp", label: "WhatsApp" },
   { href: "/dashboard/equipo", label: "Equipo" },
   { href: "/dashboard/facturacion", label: "Facturación" },
   { href: "/dashboard/configuracion", label: "Configuración" },
@@ -50,6 +52,7 @@ export function Topbar() {
           Configuración inicial {activeWorkspace.onboardingCompletion}%
         </Link>
         <button className="rounded-xl border border-white/10 bg-white/10 p-2 text-zinc-200" aria-label="Notificaciones"><Bell className="h-4 w-4" /></button>
+        <span className="hidden rounded-full border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-emerald-100 md:inline" title="Versión actual del build">{BUILD_TAG}</span>
         <div className="rounded-xl border border-cyan-300/30 bg-cyan-400/20 px-3 py-2 text-sm font-semibold" title="Camila Romero">CR</div>
       </div>
       <nav className="order-last flex w-full flex-wrap gap-1 overflow-x-auto pt-2 text-xs lg:hidden">

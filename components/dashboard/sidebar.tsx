@@ -8,6 +8,7 @@ import {
   Gauge,
   MegaphoneIcon,
   MessageCircleMore,
+  Plug,
   Settings,
   TrendingUp,
   UsersRound,
@@ -16,8 +17,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { cn } from "@/lib/utils";
+import { BUILD_TAG } from "@/lib/version";
 
-const items = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Gauge;
+  group: string;
+  badge?: string;
+};
+
+const items: NavItem[] = [
   { href: "/dashboard", label: "Inicio", icon: Gauge, group: "operación" },
   { href: "/dashboard/conversaciones", label: "Conversaciones", icon: MessageCircleMore, group: "operación" },
   { href: "/dashboard/leads", label: "Leads", icon: TrendingUp, group: "ventas" },
@@ -25,6 +35,7 @@ const items = [
   { href: "/dashboard/automatizaciones", label: "Automatizaciones", icon: Bot, group: "automatización" },
   { href: "/dashboard/campanias", label: "Campañas", icon: MegaphoneIcon, group: "automatización" },
   { href: "/dashboard/analytics", label: "Analítica", icon: BarChart3, group: "insights" },
+  { href: "/dashboard/integracion-whatsapp", label: "WhatsApp API", icon: Plug, group: "cuenta", badge: "Nuevo" },
   { href: "/dashboard/equipo", label: "Equipo", icon: UsersRound, group: "cuenta" },
   { href: "/dashboard/facturacion", label: "Facturación", icon: CreditCard, group: "cuenta" },
   { href: "/dashboard/configuracion", label: "Configuración", icon: Settings, group: "cuenta" },
@@ -72,7 +83,8 @@ export function Sidebar() {
                     )}
                   >
                     <item.icon className="h-4 w-4" />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge ? <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-emerald-100">{item.badge}</span> : null}
                   </Link>
                 );
               })}
@@ -80,6 +92,9 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+      <p className="mt-6 border-t border-white/5 pt-3 text-[10px] uppercase tracking-wide text-zinc-500" title="Versión del build">
+        Build · {BUILD_TAG}
+      </p>
     </aside>
   );
 }
