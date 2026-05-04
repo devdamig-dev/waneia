@@ -1,8 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search, X } from "lucide-react";
-import { contacts as seedContacts, segments as seedSegments } from "@/data/mock-data";
+import Link from "next/link";
+import { ExternalLink, MessageCircleMore, Plus, Search } from "lucide-react";
+import {
+  campaigns as seedCampaigns,
+  contacts as seedContacts,
+  conversations as seedConversations,
+  leads as seedLeads,
+  segments as seedSegments,
+} from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +19,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Toast } from "@/components/ui/toast";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Contact, ContactLifecycle } from "@/types/entities";
+import { StatusBadge } from "@/components/dashboard/status-badge";
 
 const lifecycleClasses: Record<ContactLifecycle, string> = {
   nuevo: "border-cyan-300/40 bg-cyan-500/10 text-cyan-100",
@@ -29,6 +37,9 @@ const segmentTone: Record<string, string> = {
   violet: "border-violet-300/40 bg-violet-500/10 text-violet-100",
 };
 
+const formatCurrency = (n: number) =>
+  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
+
 export function ContactsClient() {
   const { activeWorkspaceId } = useWorkspace();
   const [items, setItems] = useState<Contact[]>(seedContacts);
@@ -36,6 +47,7 @@ export function ContactsClient() {
   const [lifecycleFilter, setLifecycleFilter] = useState<ContactLifecycle | "todos">("todos");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState({ name: "", phone: "", email: "", business: "", source: "WhatsApp", lifecycle: "nuevo" as ContactLifecycle, optIn: true });
 
@@ -53,6 +65,8 @@ export function ContactsClient() {
     if (search) base = base.filter((c) => `${c.name} ${c.phone} ${c.business} ${c.email ?? ""}`.toLowerCase().includes(search.toLowerCase()));
     return base;
   }, [workspaceContacts, workspaceSegments, activeSegment, lifecycleFilter, search]);
+
+  const selected = useMemo(() => items.find((c) => c.id === selectedId), [items, selectedId]);
 
   const addContact = () => {
     const created: Contact = {
@@ -78,6 +92,21 @@ export function ContactsClient() {
 
   const toggleOptIn = (id: string) =>
     setItems((prev) => prev.map((c) => (c.id === id ? { ...c, optIn: !c.optIn } : c)));
+
+  // Linked entities for selected contact
+  const contactConversations = useMemo(
+    () => (selected ? seedConversations.filter((c) => c.contactId === selected.id) : []),
+    [selected],
+  );
+  const contactLeads = useMemo(
+    () => (selected ? seedLeads.filter((l) => l.contactId === selected.id) : []),
+    [selected],
+  );
+  const contactCampaigns = useMemo(() => {
+    if (!selected) return [];
+    const segmentsForContact = seedSegments.filter((s) => s.contactIds.includes(selected.id)).map((s) => s.id);
+    return seedCampaigns.filter((c) => c.workspaceId === selected.workspaceId && segmentsForContact.includes(c.segmentId));
+  }, [selected]);
 
   return (
     <>
@@ -132,10 +161,10 @@ export function ContactsClient() {
                   <th className="p-3">Negocio</th>
                   <th className="p-3">Lifecycle</th>
                   <th className="p-3">Origen</th>
-                  <th className="p-3">Agente</th>
+                  <th className="p-3">Operador</th>
                   <th className="p-3">Opt-in</th>
                   <th className="p-3">Última interacción</th>
-                  <th className="p-3">Tags</th>
+                  <th className="p-3">Etiquetas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -144,14 +173,15 @@ export function ContactsClient() {
                 ) : (
                   filtered.map((c) => {
                     const agent = workspaceAgents.find((a) => a.id === c.assignedAgentId);
+                    const isActive = selected?.id === c.id;
                     return (
-                      <tr key={c.id} className="hover:bg-white/5">
+                      <tr key={c.id} onClick={() => setSelectedId(c.id)} className={`cursor-pointer hover:bg-white/5 ${isActive ? "bg-cyan-500/5" : ""}`}>
                         <td className="p-3"><p className="font-medium">{c.name}</p><p className="text-[11px] text-zinc-500">{c.phone}{c.email ? ` · ${c.email}` : ""}</p></td>
                         <td className="p-3 text-zinc-300">{c.business ?? "—"}</td>
                         <td className="p-3"><span className={`rounded-full border px-2 py-0.5 text-[11px] ${lifecycleClasses[c.lifecycle]}`}>{c.lifecycle}</span></td>
                         <td className="p-3 text-zinc-300">{c.source}</td>
                         <td className="p-3 text-zinc-300">{agent?.name ?? "—"}</td>
-                        <td className="p-3"><ToggleSwitch checked={c.optIn} onChange={() => toggleOptIn(c.id)} /></td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}><ToggleSwitch checked={c.optIn} onChange={() => toggleOptIn(c.id)} /></td>
                         <td className="p-3 text-zinc-300">{c.lastInteraction}</td>
                         <td className="p-3"><div className="flex flex-wrap gap-1">{c.tags.map((t) => <span key={t} className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">#{t}</span>)}</div></td>
                       </tr>
@@ -161,6 +191,89 @@ export function ContactsClient() {
               </tbody>
             </table>
           </Card>
+
+          {selected ? (
+            <Card className="p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-zinc-400">Detalle de contacto</p>
+                  <h3 className="text-xl font-semibold">{selected.name}</h3>
+                  <p className="text-sm text-zinc-400">{selected.phone}{selected.email ? ` · ${selected.email}` : ""}{selected.business ? ` · ${selected.business}` : ""}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className={`rounded-full border px-2 py-0.5 ${lifecycleClasses[selected.lifecycle]}`}>{selected.lifecycle}</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-zinc-300">Origen: {selected.source}</span>
+                  <span className={`rounded-full border px-2 py-0.5 ${selected.optIn ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" : "border-rose-300/40 bg-rose-500/10 text-rose-100"}`}>{selected.optIn ? "Opt-in activo" : "Opt-in revocado"}</span>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                <Card className="p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-400">Resumen</p>
+                  <p className="mt-2 text-sm">Conversaciones: {selected.totalConversations}</p>
+                  <p className="text-sm">Última interacción: {selected.lastInteraction}</p>
+                  <p className="text-sm">Operador asignado: {workspaceAgents.find((a) => a.id === selected.assignedAgentId)?.name ?? "—"}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {selected.tags.map((t) => <span key={t} className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-100">#{t}</span>)}
+                  </div>
+                </Card>
+
+                <Card className="p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-400 inline-flex items-center gap-1"><MessageCircleMore className="h-3.5 w-3.5" /> Conversaciones</p>
+                  {contactConversations.length === 0 ? <p className="mt-2 text-xs text-zinc-500">Sin conversaciones registradas.</p> : (
+                    <div className="mt-2 space-y-2">
+                      {contactConversations.map((c) => (
+                        <Link key={c.id} href={`/dashboard/conversaciones?id=${c.id}`} className="block rounded-lg border border-white/10 bg-white/5 p-2 text-xs hover:bg-white/10">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{c.intent}</span>
+                            <StatusBadge status={c.status} />
+                          </div>
+                          <p className="mt-1 line-clamp-1 text-[11px] text-zinc-400">{c.lastMessage}</p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+
+                <Card className="p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-400">Oportunidades</p>
+                  {contactLeads.length === 0 ? <p className="mt-2 text-xs text-zinc-500">Sin oportunidades creadas.</p> : (
+                    <div className="mt-2 space-y-2">
+                      {contactLeads.map((l) => (
+                        <Link key={l.id} href={`/dashboard/leads?id=${l.id}`} className="block rounded-lg border border-white/10 bg-white/5 p-2 text-xs hover:bg-white/10">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{l.name}</span>
+                            <span className="text-emerald-200">{formatCurrency(l.estimatedValue)}</span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-400">
+                            <StatusBadge status={l.stage} />
+                            <span className="inline-flex items-center gap-1">{l.nextFollowUp} <ExternalLink className="h-3 w-3" /></span>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+
+                <Card className="p-3 lg:col-span-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-400">Campañas que incluyen este contacto</p>
+                  {contactCampaigns.length === 0 ? <p className="mt-2 text-xs text-zinc-500">Este contacto no aparece en campañas activas.</p> : (
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      {contactCampaigns.map((c) => (
+                        <Link key={c.id} href="/dashboard/campanias" className="block rounded-lg border border-white/10 bg-white/5 p-2 text-xs hover:bg-white/10">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{c.name}</span>
+                            <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">{c.status}</span>
+                          </div>
+                          <p className="mt-1 line-clamp-1 text-[11px] text-zinc-400">{c.preview}</p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </Card>
+          ) : null}
         </div>
       </div>
 
@@ -189,7 +302,7 @@ export function ContactsClient() {
             <ToggleSwitch checked={draft.optIn} onChange={(v) => setDraft((p) => ({ ...p, optIn: v }))} />
           </div>
         </div>
-        <Button onClick={addContact} className="mt-4 w-full bg-emerald-500/30 hover:bg-emerald-500/40"><X className="hidden" />Agregar contacto</Button>
+        <Button onClick={addContact} className="mt-4 w-full bg-emerald-500/30 hover:bg-emerald-500/40">Agregar contacto</Button>
       </Modal>
 
       <Toast message={toast} onClose={() => setToast("")} />

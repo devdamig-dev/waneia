@@ -18,13 +18,13 @@ import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { cn } from "@/lib/utils";
 
 const items = [
-  { href: "/dashboard", label: "Dashboard", icon: Gauge, group: "operación" },
+  { href: "/dashboard", label: "Inicio", icon: Gauge, group: "operación" },
   { href: "/dashboard/conversaciones", label: "Conversaciones", icon: MessageCircleMore, group: "operación" },
   { href: "/dashboard/leads", label: "Leads", icon: TrendingUp, group: "ventas" },
   { href: "/dashboard/contactos", label: "Contactos", icon: Building2, group: "ventas" },
   { href: "/dashboard/automatizaciones", label: "Automatizaciones", icon: Bot, group: "automatización" },
   { href: "/dashboard/campanias", label: "Campañas", icon: MegaphoneIcon, group: "automatización" },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, group: "insights" },
+  { href: "/dashboard/analytics", label: "Analítica", icon: BarChart3, group: "insights" },
   { href: "/dashboard/equipo", label: "Equipo", icon: UsersRound, group: "cuenta" },
   { href: "/dashboard/facturacion", label: "Facturación", icon: CreditCard, group: "cuenta" },
   { href: "/dashboard/configuracion", label: "Configuración", icon: Settings, group: "cuenta" },

@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   Bot,
+  CalendarClock,
   CheckCircle2,
   Clock3,
+  ExternalLink,
   Flame,
-  MessageSquarePlus,
   Send,
   Sparkles,
   StickyNote,
@@ -17,7 +19,7 @@ import {
   UserPlus,
   XCircle,
 } from "lucide-react";
-import { conversations as seedConversations, contacts } from "@/data/mock-data";
+import { contacts, conversations as seedConversations, leads, messageTemplates } from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -28,21 +30,23 @@ import {
   ActivityEvent,
   Conversation,
   ConversationCategory,
+  ConversationPriority,
   ConversationStatus,
 } from "@/types/entities";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 
-const queues: Array<{ value: ConversationStatus | "todas"; label: string; tone: string }> = [
+const queues: Array<{ value: ConversationStatus | "todas" | "sla"; label: string; tone: string }> = [
   { value: "todas", label: "Todas", tone: "border-white/15 bg-white/5 text-zinc-200" },
-  { value: "urgente", label: "Urgentes", tone: "border-rose-300/40 bg-rose-500/10 text-rose-100" },
-  { value: "sin responder", label: "Sin responder", tone: "border-amber-300/40 bg-amber-500/10 text-amber-100" },
-  { value: "en seguimiento", label: "En seguimiento", tone: "border-cyan-300/40 bg-cyan-500/10 text-cyan-100" },
+  { value: "sla", label: "Urgentes", tone: "border-rose-300/40 bg-rose-500/10 text-rose-100" },
+  { value: "nuevo", label: "Nuevos", tone: "border-cyan-300/40 bg-cyan-500/10 text-cyan-100" },
+  { value: "en curso", label: "En curso", tone: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" },
   { value: "pendiente", label: "Pendientes", tone: "border-violet-300/40 bg-violet-500/10 text-violet-100" },
-  { value: "ganada", label: "Ganadas", tone: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" },
-  { value: "perdida", label: "Perdidas", tone: "border-zinc-300/40 bg-zinc-500/10 text-zinc-200" },
+  { value: "ganado", label: "Ganados", tone: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" },
+  { value: "perdido", label: "Perdidos", tone: "border-rose-300/40 bg-rose-500/10 text-rose-100" },
+  { value: "cerrado", label: "Cerrados", tone: "border-zinc-300/40 bg-zinc-500/10 text-zinc-200" },
 ];
 
-const priorityChip: Record<string, string> = {
+const priorityChip: Record<ConversationPriority, string> = {
   alta: "border-rose-300/40 bg-rose-500/10 text-rose-100",
   media: "border-amber-300/40 bg-amber-500/10 text-amber-100",
   baja: "border-zinc-300/40 bg-zinc-500/10 text-zinc-200",
@@ -68,6 +72,8 @@ export function ConversationsClient() {
   const [filterCategory, setFilterCategory] = useState<ConversationCategory | "todas">("todas");
   const [filterAgent, setFilterAgent] = useState<string>("todos");
   const [filterTag, setFilterTag] = useState<string>("todos");
+  const [filterPriority, setFilterPriority] = useState<ConversationPriority | "todas">("todas");
+  const [filterIntent, setFilterIntent] = useState<string>("todos");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [reply, setReply] = useState("");
@@ -82,18 +88,31 @@ export function ConversationsClient() {
     () => teamMembers.filter((m) => m.workspaceId === activeWorkspaceId),
     [activeWorkspaceId],
   );
+  const workspaceTemplates = useMemo(
+    () => messageTemplates.filter((t) => t.workspaceId === activeWorkspaceId && t.category !== "campaña"),
+    [activeWorkspaceId],
+  );
   const allTags = useMemo(
     () => Array.from(new Set(workspaceItems.flatMap((c) => c.tags))),
+    [workspaceItems],
+  );
+  const allIntents = useMemo(
+    () => Array.from(new Set(workspaceItems.map((c) => c.intent))),
     [workspaceItems],
   );
 
   const filtered = useMemo(
     () =>
       workspaceItems.filter((c) => {
-        if (queue !== "todas" && c.status !== queue) return false;
+        if (queue === "sla") {
+          if (c.slaMinutesRemaining > 5) return false;
+          if (c.status === "ganado" || c.status === "perdido" || c.status === "cerrado") return false;
+        } else if (queue !== "todas" && c.status !== queue) return false;
         if (filterCategory !== "todas" && c.category !== filterCategory) return false;
         if (filterAgent !== "todos" && c.assignedAgentId !== filterAgent) return false;
         if (filterTag !== "todos" && !c.tags.includes(filterTag)) return false;
+        if (filterPriority !== "todas" && c.priority !== filterPriority) return false;
+        if (filterIntent !== "todos" && c.intent !== filterIntent) return false;
         if (
           search &&
           !`${c.customerName} ${c.phone} ${c.lastMessage}`.toLowerCase().includes(search.toLowerCase())
@@ -101,13 +120,13 @@ export function ConversationsClient() {
           return false;
         return true;
       }),
-    [workspaceItems, queue, filterCategory, filterAgent, filterTag, search],
+    [workspaceItems, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, search],
   );
 
   useEffect(() => {
     setSelectedId(filtered[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId, queue, filterCategory, filterAgent, filterTag, search]);
+  }, [activeWorkspaceId, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, search]);
 
   useEffect(() => {
     if (!selectedId && filtered[0]) setSelectedId(filtered[0].id);
@@ -122,11 +141,19 @@ export function ConversationsClient() {
     () => (selected ? teamMembers.find((m) => m.id === selected.assignedAgentId) : undefined),
     [selected],
   );
+  const selectedLead = useMemo(() => {
+    if (!selected) return undefined;
+    if (selected.linkedLeadId) return leads.find((l) => l.id === selected.linkedLeadId);
+    return leads.find((l) => l.conversationId === selected.id || (l.contactId === selected.contactId && l.workspaceId === selected.workspaceId));
+  }, [selected]);
 
   const counts = useMemo(() => {
     const out: Record<string, number> = { todas: workspaceItems.length };
-    queues.slice(1).forEach((q) => {
-      out[q.value] = workspaceItems.filter((c) => c.status === q.value).length;
+    out["sla"] = workspaceItems.filter((c) => c.slaMinutesRemaining <= 5 && c.status !== "ganado" && c.status !== "perdido" && c.status !== "cerrado").length;
+    queues.forEach((q) => {
+      if (q.value !== "todas" && q.value !== "sla") {
+        out[q.value] = workspaceItems.filter((c) => c.status === q.value).length;
+      }
     });
     return out;
   }, [workspaceItems]);
@@ -151,7 +178,7 @@ export function ConversationsClient() {
           ...selected.messages,
           { id: `m-${Date.now()}`, sender: "agent", agentName: selectedAgent?.name ?? "Agente", content: reply, timestamp: stamp },
         ],
-        status: selected.status === "sin responder" || selected.status === "urgente" ? "en seguimiento" : selected.status,
+        status: selected.status === "nuevo" ? "en curso" : selected.status,
         slaMinutesRemaining: Math.max(selected.slaMinutesRemaining, 30),
         updatedAt: now.toISOString(),
       },
@@ -162,6 +189,10 @@ export function ConversationsClient() {
   };
 
   const useSuggested = () => selected && setReply(selected.suggestedReply);
+  const insertTemplate = (id: string) => {
+    const t = workspaceTemplates.find((x) => x.id === id);
+    if (t) setReply(t.body);
+  };
 
   const assignAgent = (agentId: string) => {
     if (!selected) return;
@@ -210,9 +241,18 @@ export function ConversationsClient() {
     setToast("Nota interna guardada.");
   };
 
+  const updateNextTask = (text: string) => {
+    if (!selected) return;
+    updateConversation(selected.id, { nextTask: text });
+  };
+  const updateNextDue = (date: string) => {
+    if (!selected) return;
+    updateConversation(selected.id, { nextTaskDueDate: date });
+  };
+
   return (
     <>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-8">
         {queues.map((q) => (
           <button
             key={q.value}
@@ -242,10 +282,23 @@ export function ConversationsClient() {
             <option value="consulta" className="bg-[#0b1023]">Consulta</option>
             <option value="soporte humano" className="bg-[#0b1023]">Soporte humano</option>
           </select>
+          <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as ConversationPriority | "todas")} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
+            <option value="todas" className="bg-[#0b1023]">Todas las prioridades</option>
+            <option value="alta" className="bg-[#0b1023]">Prioridad alta</option>
+            <option value="media" className="bg-[#0b1023]">Prioridad media</option>
+            <option value="baja" className="bg-[#0b1023]">Prioridad baja</option>
+          </select>
           <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="todos" className="bg-[#0b1023]">Todos los agentes</option>
+            <option value="todos" className="bg-[#0b1023]">Todos los operadores</option>
+            <option value="" className="bg-[#0b1023]">Sin asignar</option>
             {workspaceAgents.map((a) => (
               <option key={a.id} value={a.id} className="bg-[#0b1023]">{a.name}</option>
+            ))}
+          </select>
+          <select value={filterIntent} onChange={(e) => setFilterIntent(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
+            <option value="todos" className="bg-[#0b1023]">Todos los intents</option>
+            {allIntents.map((t) => (
+              <option key={t} value={t} className="bg-[#0b1023]">{t}</option>
             ))}
           </select>
           <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
@@ -286,7 +339,7 @@ export function ConversationsClient() {
                       <CategoryBadge category={c.category} />
                       <StatusBadge status={c.status} />
                       <span className={`rounded-full border px-2 py-0.5 ${priorityChip[c.priority]}`}>Prio {c.priority}</span>
-                      <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">Score {c.leadScore}</span>
+                      <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">Puntaje {c.leadScore}</span>
                     </div>
                   </button>
                 );
@@ -308,7 +361,7 @@ export function ConversationsClient() {
                   <span className={`rounded-full border px-2 py-1 ${toneChip[formatSla(selected.slaMinutesRemaining).tone]}`}>
                     <TimerReset className="mr-1 inline h-3.5 w-3.5" />{formatSla(selected.slaMinutesRemaining).text}
                   </span>
-                  <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2 py-1 text-cyan-100"><Flame className="mr-1 inline h-3.5 w-3.5" />Score {selected.leadScore}</span>
+                  <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2 py-1 text-cyan-100"><Flame className="mr-1 inline h-3.5 w-3.5" />Puntaje {selected.leadScore}</span>
                   <CategoryBadge category={selected.category} />
                   <StatusBadge status={selected.status} />
                 </div>
@@ -348,13 +401,22 @@ export function ConversationsClient() {
                     </Button>
                   </div>
 
+                  {workspaceTemplates.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-zinc-400">Respuestas rápidas:</span>
+                      {workspaceTemplates.map((t) => (
+                        <button key={t.id} onClick={() => insertTemplate(t.id)} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-white/10" title={t.body}>{t.name}</button>
+                      ))}
+                    </div>
+                  ) : null}
+
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                    <Button onClick={() => changeStatus("en seguimiento")}><MessageSquarePlus className="mr-1 h-4 w-4" />Seguimiento</Button>
+                    <Button onClick={() => changeStatus("en curso")}><Sparkles className="mr-1 h-4 w-4" />En curso</Button>
                     <Button onClick={() => changeStatus("pendiente")}><Clock3 className="mr-1 h-4 w-4" />Pendiente</Button>
-                    <Button onClick={() => changeStatus("ganada")} className="border-emerald-300/40 bg-emerald-500/20 hover:bg-emerald-500/30"><CheckCircle2 className="mr-1 h-4 w-4" />Marcar ganada</Button>
-                    <Button onClick={() => changeStatus("perdida")} className="border-rose-300/40 bg-rose-500/20 hover:bg-rose-500/30"><XCircle className="mr-1 h-4 w-4" />Marcar perdida</Button>
-                    <Button onClick={() => setToast(`Follow-up agendado: ${selected.nextTask}`)}><Sparkles className="mr-1 h-4 w-4" />Agendar follow-up</Button>
-                    <Button onClick={() => setToast("Conversación cerrada.")}>Cerrar</Button>
+                    <Button onClick={() => changeStatus("ganado")} className="border-emerald-300/40 bg-emerald-500/20 hover:bg-emerald-500/30"><CheckCircle2 className="mr-1 h-4 w-4" />Marcar ganado</Button>
+                    <Button onClick={() => changeStatus("perdido")} className="border-rose-300/40 bg-rose-500/20 hover:bg-rose-500/30"><XCircle className="mr-1 h-4 w-4" />Marcar perdido</Button>
+                    <Button onClick={() => changeStatus("cerrado")}>Cerrar</Button>
+                    <Button onClick={() => setToast(`Seguimiento agendado: ${selected.nextTask}`)}>Agendar follow-up</Button>
                   </div>
                 </Card>
 
@@ -366,19 +428,37 @@ export function ConversationsClient() {
                     <p className="mt-1 text-xs text-zinc-400">Origen: {selectedContact?.source}</p>
                     <p className="text-xs text-zinc-400">Lifecycle: {selectedContact?.lifecycle}</p>
                     <p className="text-xs text-zinc-400">Conversaciones: {selectedContact?.totalConversations}</p>
+                    {selectedContact ? <Link href={`/dashboard/contactos?id=${selectedContact.id}`} className="mt-1 inline-flex items-center gap-1 text-[11px] text-cyan-200 hover:text-cyan-100">Ver contacto <ExternalLink className="h-3 w-3" /></Link> : null}
                     {selected.estimatedOpportunity ? (
                       <p className="mt-2 rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-100">Oportunidad: {selected.estimatedOpportunity}</p>
                     ) : null}
                   </Card>
 
+                  {selectedLead ? (
+                    <Card className="p-3">
+                      <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><Sparkles className="h-3.5 w-3.5" /> Lead vinculado</p>
+                      <p className="mt-2 text-sm font-semibold">{selectedLead.name}</p>
+                      <p className="text-xs text-zinc-400">{selectedLead.business}</p>
+                      <p className="mt-1 inline-flex items-center gap-1 text-xs"><StatusBadge status={selectedLead.stage} /></p>
+                      <p className="mt-1 text-xs text-emerald-200">Valor estimado AR$ {selectedLead.estimatedValue.toLocaleString("es-AR")}</p>
+                      <p className="text-[11px] text-zinc-400">Próximo follow-up: {selectedLead.nextFollowUp}</p>
+                      <Link href={`/dashboard/leads?id=${selectedLead.id}`} className="mt-2 inline-flex items-center gap-1 text-[11px] text-cyan-200 hover:text-cyan-100">Abrir en pipeline <ExternalLink className="h-3 w-3" /></Link>
+                    </Card>
+                  ) : (
+                    <Card className="p-3 text-xs text-zinc-400">
+                      <p>Sin lead vinculado. Convertí esta conversación en lead desde el pipeline.</p>
+                    </Card>
+                  )}
+
                   <Card className="p-3">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><UserPlus className="h-3.5 w-3.5" /> Asignación</p>
+                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><UserPlus className="h-3.5 w-3.5" /> Operador asignado</p>
                     <select value={selected.assignedAgentId ?? ""} onChange={(e) => assignAgent(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-sm">
                       <option value="" className="bg-[#0b1023]">Sin asignar</option>
                       {workspaceAgents.map((a) => (
                         <option key={a.id} value={a.id} className="bg-[#0b1023]">{a.name} · {a.role}</option>
                       ))}
                     </select>
+                    <p className="mt-1 text-[10px] text-zinc-500">La asignación persiste en esta sesión.</p>
                   </Card>
 
                   <Card className="p-3">
@@ -394,38 +474,42 @@ export function ConversationsClient() {
                       className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-xs"
                     />
                   </Card>
-
-                  <Card className="p-3">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><StickyNote className="h-3.5 w-3.5" /> Notas internas</p>
-                    <p className="mt-2 whitespace-pre-line rounded-lg border border-white/10 bg-black/20 p-2 text-xs text-zinc-200">{selected.internalNotes || "Sin notas todavía."}</p>
-                    <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregá una nota…" className="mt-2 min-h-14 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-xs" />
-                    <Button onClick={saveNote} className="mt-2 w-full text-xs">Guardar nota</Button>
-                  </Card>
                 </div>
               </div>
             </Card>
 
             <div className="grid gap-3 md:grid-cols-2">
               <Card className="p-4">
-                <p className="text-sm font-semibold inline-flex items-center gap-2"><Sparkles className="h-4 w-4 text-emerald-300" /> Próxima tarea</p>
-                <p className="mt-1 text-sm text-zinc-200">{selected.nextTask}</p>
-                <p className="mt-2 text-xs text-zinc-400">Recomendación AI: priorizá esta conversación, score {selected.leadScore} y {formatSla(selected.slaMinutesRemaining).text.toLowerCase()}.</p>
+                <p className="text-sm font-semibold inline-flex items-center gap-2"><CalendarClock className="h-4 w-4 text-emerald-300" /> Próxima tarea / follow-up</p>
+                <input value={selected.nextTask} onChange={(e) => updateNextTask(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-sm" />
+                <div className="mt-2 grid grid-cols-[1fr_auto] items-center gap-2">
+                  <input type="datetime-local" value={selected.nextTaskDueDate ?? ""} onChange={(e) => updateNextDue(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 p-2 text-sm" />
+                  <Button onClick={() => setToast("Recordatorio agendado.")}>Agendar</Button>
+                </div>
+                <p className="mt-2 text-[11px] text-zinc-500">Recomendación AI: priorizá esta conversación, puntaje {selected.leadScore} y {formatSla(selected.slaMinutesRemaining).text.toLowerCase()}.</p>
               </Card>
               <Card className="p-4">
-                <p className="text-sm font-semibold inline-flex items-center gap-2"><Clock3 className="h-4 w-4 text-cyan-300" /> Timeline de actividad</p>
-                <div className="mt-2 space-y-2 text-xs text-zinc-300">
-                  {selected.activity.map((ev) => (
-                    <div key={ev.id} className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/5 p-2">
-                      {ev.type === "sla" ? <AlertTriangle className="h-3.5 w-3.5 text-rose-300" /> : <Sparkles className="h-3.5 w-3.5 text-cyan-300" />}
-                      <div>
-                        <p>{ev.label}</p>
-                        <p className="text-[10px] text-zinc-500">{ev.when}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-sm font-semibold inline-flex items-center gap-2"><StickyNote className="h-4 w-4 text-violet-300" /> Notas internas</p>
+                <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-line rounded-lg border border-white/10 bg-black/20 p-2 text-xs text-zinc-200">{selected.internalNotes || "Sin notas todavía."}</p>
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregá una nota interna…" className="mt-2 min-h-14 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-xs" />
+                <Button onClick={saveNote} className="mt-2 w-full text-xs">Guardar nota</Button>
               </Card>
             </div>
+
+            <Card className="p-4">
+              <p className="text-sm font-semibold inline-flex items-center gap-2"><Clock3 className="h-4 w-4 text-cyan-300" />Línea de tiempo</p>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {selected.activity.map((ev) => (
+                  <div key={ev.id} className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs text-zinc-300">
+                    {ev.type === "sla" ? <AlertTriangle className="h-3.5 w-3.5 text-rose-300" /> : <Sparkles className="h-3.5 w-3.5 text-cyan-300" />}
+                    <div>
+                      <p>{ev.label}</p>
+                      <p className="text-[10px] text-zinc-500">{ev.when}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         ) : (
           <Card className="p-8 text-center text-sm text-zinc-400">Seleccioná una conversación para ver el detalle.</Card>
