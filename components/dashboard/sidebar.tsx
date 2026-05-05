@@ -2,9 +2,12 @@
 
 import {
   BarChart3,
+  BookOpen,
   Bot,
+  Brain,
   Building2,
   CreditCard,
+  FileText,
   Gauge,
   MegaphoneIcon,
   MessageCircleMore,
@@ -12,6 +15,7 @@ import {
   Settings,
   TrendingUp,
   UsersRound,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -33,19 +37,24 @@ const items: NavItem[] = [
   { href: "/dashboard/leads", label: "Leads", icon: TrendingUp, group: "ventas" },
   { href: "/dashboard/contactos", label: "Contactos", icon: Building2, group: "ventas" },
   { href: "/dashboard/automatizaciones", label: "Automatizaciones", icon: Bot, group: "automatización" },
+  { href: "/dashboard/bots", label: "Flujos de bot", icon: Workflow, group: "automatización", badge: "Nuevo" },
   { href: "/dashboard/campanias", label: "Campañas", icon: MegaphoneIcon, group: "automatización" },
+  { href: "/dashboard/plantillas", label: "Plantillas", icon: FileText, group: "automatización" },
+  { href: "/dashboard/ia", label: "IA", icon: Brain, group: "ia", badge: "Nuevo" },
+  { href: "/dashboard/base-conocimiento", label: "Base de conocimiento", icon: BookOpen, group: "ia", badge: "Nuevo" },
   { href: "/dashboard/analytics", label: "Analítica", icon: BarChart3, group: "insights" },
-  { href: "/dashboard/integracion-whatsapp", label: "WhatsApp API", icon: Plug, group: "cuenta", badge: "Nuevo" },
+  { href: "/dashboard/integracion-whatsapp", label: "WhatsApp API", icon: Plug, group: "cuenta" },
   { href: "/dashboard/equipo", label: "Equipo", icon: UsersRound, group: "cuenta" },
   { href: "/dashboard/facturacion", label: "Facturación", icon: CreditCard, group: "cuenta" },
   { href: "/dashboard/configuracion", label: "Configuración", icon: Settings, group: "cuenta" },
 ];
 
-const groupOrder = ["operación", "ventas", "automatización", "insights", "cuenta"];
+const groupOrder = ["operación", "ventas", "automatización", "ia", "insights", "cuenta"];
 const groupLabels: Record<string, string> = {
   operación: "Operación",
   ventas: "Ventas",
   automatización: "Automatización",
+  ia: "IA y conocimiento",
   insights: "Insights",
   cuenta: "Cuenta",
 };
