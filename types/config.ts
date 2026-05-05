@@ -1,0 +1,152 @@
+// Configurable entities — these can be edited by the user from the admin
+// surfaces and persisted to localStorage per workspace.
+
+export type CategoryUsage = {
+  conversations: number;
+  leads: number;
+  automations: number;
+  campaigns: number;
+};
+
+export type Category = {
+  id: string;
+  name: string;
+  color: string; // tailwind color name (cyan, emerald, amber, rose, violet, sky, zinc)
+  icon: string; // lucide icon name token
+  isDefault: boolean;
+  order: number;
+  usage: CategoryUsage;
+};
+
+export type TagItem = {
+  id: string;
+  name: string;
+  color: string;
+  appliesTo: Array<"contactos" | "leads" | "conversaciones">;
+};
+
+export type PipelineStageStatusType = "abierto" | "ganado" | "perdido";
+
+export type PipelineStageConfig = {
+  id: string;
+  name: string;
+  color: string;
+  probability: number; // 0..100
+  slaTargetMinutes: number;
+  automationTrigger: string; // free-text rule reference
+  statusType: PipelineStageStatusType;
+  order: number;
+};
+
+export type Pipeline = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  stages: PipelineStageConfig[];
+};
+
+export type Department = {
+  id: string;
+  name: string;
+  description: string;
+  memberIds: string[]; // tm-*
+  categoryIds: string[];
+  slaMinutes: number;
+  defaultBotId: string | null;
+  routingRule: string;
+};
+
+export type AIProvider = "openai" | "anthropic" | "gemini" | "custom";
+export type AITone = "profesional" | "cercano" | "comercial" | "tecnico";
+export type AIFallback = "derivar humano" | "responder plantilla" | "pedir mas datos";
+
+export type AISettings = {
+  enabled: boolean;
+  provider: AIProvider;
+  model: string;
+  apiKey: string;
+  customEndpoint?: string;
+  temperature: number; // 0..1
+  tone: AITone;
+  fallback: AIFallback;
+  fallbackTemplateId: string | null;
+  connectionStatus: "no probada" | "ok" | "error";
+  lastTestedAt: string | null;
+  monthlyMessageCap: number;
+};
+
+export type KnowledgeStatus = "borrador" | "activo";
+export type KnowledgeTrainingStatus = "pendiente" | "entrenando" | "activo";
+export type KnowledgeSourceType = "manual" | "pdf" | "url" | "catalogo" | "faq";
+
+export type KnowledgeArticle = {
+  id: string;
+  title: string;
+  departmentId: string | null;
+  tags: string[];
+  content: string;
+  status: KnowledgeStatus;
+  sourceType: KnowledgeSourceType;
+  sourceRef?: string;
+  trainingStatus: KnowledgeTrainingStatus;
+  usedByAi: boolean;
+  updatedAt: string;
+};
+
+export type BotNodeType =
+  | "trigger"
+  | "message"
+  | "question"
+  | "condition"
+  | "buttons"
+  | "assign"
+  | "tag"
+  | "create_lead"
+  | "wait"
+  | "end";
+
+export type BotNode = {
+  id: string;
+  type: BotNodeType;
+  label: string;
+  body: string;
+  options?: string[]; // for buttons / question / condition branches
+  next?: string | null;
+  branches?: Array<{ value: string; nextId: string | null }>;
+  meta?: Record<string, string>;
+};
+
+export type BotFlowStatus = "borrador" | "activa" | "pausada";
+
+export type BotFlow = {
+  id: string;
+  name: string;
+  description: string;
+  status: BotFlowStatus;
+  trigger: string;
+  nodes: BotNode[];
+  updatedAt: string;
+};
+
+export type ConfigurableTemplate = {
+  id: string;
+  name: string;
+  category: string; // category id or "general"
+  channel: "whatsapp" | "general";
+  approved: boolean; // simulated HSM approval
+  body: string;
+  variables: string[];
+  shortcut?: string; // /atajo
+};
+
+export type WaneiaConfig = {
+  categories: Category[];
+  tags: TagItem[];
+  pipelines: Pipeline[];
+  defaultPipelineId: string;
+  departments: Department[];
+  ai: AISettings;
+  knowledge: KnowledgeArticle[];
+  botFlows: BotFlow[];
+  templates: ConfigurableTemplate[];
+};
