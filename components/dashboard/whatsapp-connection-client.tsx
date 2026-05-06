@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Circle, Copy, Loader2, ShieldCheck, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { ArrowRight, Check, Circle, Copy, EyeOff, Loader2, ShieldCheck, Sparkles, Wifi, WifiOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -9,6 +9,8 @@ import { Toast } from "@/components/ui/toast";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { whatsappConnectionData } from "@/data/saas-data";
+
+const GUIDE_STORAGE_PREFIX = "waneia.guide.whatsapp.";
 
 type StepKey = "negocio" | "numero" | "webhook" | "plantillas" | "prueba";
 
@@ -47,6 +49,8 @@ export function WhatsappConnectionClient() {
   const [testInput, setTestInput] = useState("");
   const [testResult, setTestResult] = useState("");
   const [toast, setToast] = useState("");
+  const [dismissed, setDismissed] = useState(false);
+  const [hydratedDismiss, setHydratedDismiss] = useState(false);
 
   useEffect(() => {
     setStepStatus(initialState);
@@ -54,6 +58,28 @@ export function WhatsappConnectionClient() {
     setBusinessId(details.businessAccountId === "—" ? "" : details.businessAccountId);
     setPhone(details.phoneNumber === "—" ? "" : details.phoneNumber);
   }, [initialState, details.businessAccountId, details.phoneNumber]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(`${GUIDE_STORAGE_PREFIX}${activeWorkspace.id}`);
+      setDismissed(raw === "1");
+    } catch {
+      setDismissed(false);
+    }
+    setHydratedDismiss(true);
+  }, [activeWorkspace.id]);
+
+  const dismissGuide = () => {
+    setDismissed(true);
+    try { localStorage.setItem(`${GUIDE_STORAGE_PREFIX}${activeWorkspace.id}`, "1"); } catch { /* ignore */ }
+    setToast("Guía cerrada. Podés reanudarla cuando quieras.");
+  };
+  const resumeGuide = () => {
+    setDismissed(false);
+    try { localStorage.removeItem(`${GUIDE_STORAGE_PREFIX}${activeWorkspace.id}`); } catch { /* ignore */ }
+    setToast("Reanudando configuración.");
+  };
 
   const completion = Math.round((Object.values(stepStatus).filter(Boolean).length / steps.length) * 100);
   const allDone = completion === 100;
@@ -84,11 +110,34 @@ export function WhatsappConnectionClient() {
     }, 900);
   };
 
+  if (hydratedDismiss && dismissed) {
+    return (
+      <>
+        <Card className="flex flex-wrap items-center justify-between gap-3 border-emerald-300/30 bg-emerald-500/5 p-4">
+          <div>
+            <p className="text-sm font-semibold inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /> Guía de WhatsApp ocultada</p>
+            <p className="mt-1 text-xs text-emerald-200/90">{completion}% completado · {Object.values(stepStatus).filter(Boolean).length}/{steps.length} pasos. La guía está oculta. Reanudala cuando quieras seguir configurando.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-100">Estado: {activeWorkspace.whatsappStatus}</span>
+            <Button onClick={resumeGuide} className="bg-emerald-500/30 hover:bg-emerald-500/40"><ArrowRight className="mr-1 h-4 w-4" />Reanudar configuración</Button>
+          </div>
+        </Card>
+        <Toast message={toast} onClose={() => setToast("")} />
+      </>
+    );
+  }
+
   return (
     <>
-      <Card className="border-cyan-300/30 bg-cyan-500/5 p-3 text-xs text-cyan-100">
-        <p className="inline-flex items-center gap-1 font-semibold"><ShieldCheck className="h-3.5 w-3.5" /> Modo simulado</p>
-        <p className="mt-1 text-cyan-200/90">Esta pantalla emula el alta con WhatsApp Business Cloud API. Cuando conectes una Meta Business real, los mismos pasos aplican y los datos se persisten.</p>
+      <Card className="flex flex-wrap items-center justify-between gap-2 border-cyan-300/30 bg-cyan-500/5 p-3 text-xs text-cyan-100">
+        <div>
+          <p className="inline-flex items-center gap-1 font-semibold"><ShieldCheck className="h-3.5 w-3.5" /> Modo simulado</p>
+          <p className="mt-1 text-cyan-200/90">Esta pantalla emula el alta con WhatsApp Business Cloud API. Cuando conectes una Meta Business real, los mismos pasos aplican.</p>
+        </div>
+        <button onClick={dismissGuide} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-zinc-200 hover:bg-white/10" title="Ocultar guía">
+          <EyeOff className="h-3.5 w-3.5" />Cerrar guía
+        </button>
       </Card>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-[1.1fr_2fr]">
