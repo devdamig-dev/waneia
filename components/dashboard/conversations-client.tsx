@@ -19,8 +19,9 @@ import {
   UserPlus,
   XCircle,
 } from "lucide-react";
-import { contacts, conversations as seedConversations, leads, messageTemplates } from "@/data/mock-data";
+import { contacts, conversations as seedConversations, leads } from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
+import { useConfigurableTemplates } from "@/lib/workspace-config";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { Card } from "@/components/ui/card";
@@ -88,9 +89,10 @@ export function ConversationsClient() {
     () => teamMembers.filter((m) => m.workspaceId === activeWorkspaceId),
     [activeWorkspaceId],
   );
+  const { templates: configTemplates } = useConfigurableTemplates();
   const workspaceTemplates = useMemo(
-    () => messageTemplates.filter((t) => t.workspaceId === activeWorkspaceId && t.category !== "campaña"),
-    [activeWorkspaceId],
+    () => configTemplates.filter((t) => t.channel !== "whatsapp" || t.approved),
+    [configTemplates],
   );
   const allTags = useMemo(
     () => Array.from(new Set(workspaceItems.flatMap((c) => c.tags))),
@@ -393,7 +395,14 @@ export function ConversationsClient() {
                     <textarea
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
-                      placeholder="Escribí tu respuesta…"
+                      onKeyDown={(e) => {
+                        // expand /shortcut into template body when user types Tab or Enter
+                        if (e.key === "Tab" && reply.startsWith("/")) {
+                          const t = workspaceTemplates.find((x) => x.shortcut === reply.trim());
+                          if (t) { e.preventDefault(); setReply(t.body); }
+                        }
+                      }}
+                      placeholder="Escribí tu respuesta… o usá un atajo /cot, /fup, /post"
                       className="min-h-16 flex-1 rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
                     />
                     <Button onClick={sendReply} className="bg-emerald-500/30 hover:bg-emerald-500/40">
@@ -405,10 +414,22 @@ export function ConversationsClient() {
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] text-zinc-400">Respuestas rápidas:</span>
                       {workspaceTemplates.map((t) => (
-                        <button key={t.id} onClick={() => insertTemplate(t.id)} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-white/10" title={t.body}>{t.name}</button>
+                        <button
+                          key={t.id}
+                          onClick={() => insertTemplate(t.id)}
+                          className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-white/10"
+                          title={t.body}
+                        >
+                          {t.name}{t.shortcut ? <span className="ml-1 font-mono text-[10px] text-zinc-400">{t.shortcut}</span> : null}
+                        </button>
                       ))}
+                      <Link href="/dashboard/plantillas" className="ml-auto text-[11px] text-cyan-200 hover:text-cyan-100">Editar plantillas →</Link>
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="mt-2 text-[11px] text-zinc-500">
+                      Sin plantillas configuradas. <Link href="/dashboard/plantillas" className="text-cyan-200 underline">Crear una</Link>.
+                    </div>
+                  )}
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
                     <Button onClick={() => changeStatus("en curso")}><Sparkles className="mr-1 h-4 w-4" />En curso</Button>
