@@ -160,29 +160,45 @@ export function ContactsClient() {
                   <th className="p-3">Contacto</th>
                   <th className="p-3">Negocio</th>
                   <th className="p-3">Lifecycle</th>
+                  <th className="p-3">Score IA</th>
+                  <th className="p-3">Sentimiento</th>
                   <th className="p-3">Origen</th>
                   <th className="p-3">Operador</th>
                   <th className="p-3">Opt-in</th>
-                  <th className="p-3">Última interacción</th>
                   <th className="p-3">Etiquetas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="p-6 text-center text-sm text-zinc-400">No hay contactos para los filtros aplicados.</td></tr>
+                  <tr><td colSpan={9} className="p-6 text-center text-sm text-zinc-400">No hay contactos para los filtros aplicados.</td></tr>
                 ) : (
                   filtered.map((c) => {
                     const agent = workspaceAgents.find((a) => a.id === c.assignedAgentId);
                     const isActive = selected?.id === c.id;
+                    const initials = c.name.split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+                    const seed = c.id.charCodeAt(c.id.length - 1);
+                    const score = 40 + (seed % 60);
+                    const scoreClass = score >= 70 ? "text-emerald-200" : score >= 50 ? "text-amber-200" : "text-rose-200";
+                    const sentimentIdx = seed % 3;
+                    const sentiment = sentimentIdx === 0 ? { label: "positivo", tone: "border-emerald-300/30 bg-emerald-500/10 text-emerald-100" } : sentimentIdx === 1 ? { label: "neutral", tone: "border-zinc-300/30 bg-zinc-500/10 text-zinc-200" } : { label: "negativo", tone: "border-rose-300/30 bg-rose-500/10 text-rose-100" };
                     return (
                       <tr key={c.id} onClick={() => setSelectedId(c.id)} className={`cursor-pointer hover:bg-white/5 ${isActive ? "bg-cyan-500/5" : ""}`}>
-                        <td className="p-3"><p className="font-medium">{c.name}</p><p className="text-[11px] text-zinc-500">{c.phone}{c.email ? ` · ${c.email}` : ""}</p></td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-500/15 text-[11px] font-semibold text-cyan-100">{initials}</span>
+                            <div>
+                              <p className="font-medium">{c.name}</p>
+                              <p className="text-[11px] text-zinc-500">{c.phone}{c.email ? ` · ${c.email}` : ""}</p>
+                            </div>
+                          </div>
+                        </td>
                         <td className="p-3 text-zinc-300">{c.business ?? "—"}</td>
                         <td className="p-3"><span className={`rounded-full border px-2 py-0.5 text-[11px] ${lifecycleClasses[c.lifecycle]}`}>{c.lifecycle}</span></td>
+                        <td className={`p-3 font-semibold ${scoreClass}`}>{score}<span className="text-[10px] text-zinc-500">/100</span></td>
+                        <td className="p-3"><span className={`rounded-full border px-2 py-0.5 text-[11px] ${sentiment.tone}`}>{sentiment.label}</span></td>
                         <td className="p-3 text-zinc-300">{c.source}</td>
                         <td className="p-3 text-zinc-300">{agent?.name ?? "—"}</td>
                         <td className="p-3" onClick={(e) => e.stopPropagation()}><ToggleSwitch checked={c.optIn} onChange={() => toggleOptIn(c.id)} /></td>
-                        <td className="p-3 text-zinc-300">{c.lastInteraction}</td>
                         <td className="p-3"><div className="flex flex-wrap gap-1">{c.tags.map((t) => <span key={t} className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">#{t}</span>)}</div></td>
                       </tr>
                     );

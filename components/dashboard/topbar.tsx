@@ -23,6 +23,7 @@ const navItems = [
   { href: "/dashboard/equipo", label: "Equipo" },
   { href: "/dashboard/facturacion", label: "Facturación" },
   { href: "/dashboard/configuracion", label: "Configuración" },
+  { href: "/dashboard/ayuda", label: "Ayuda" },
 ];
 
 export function Topbar() {

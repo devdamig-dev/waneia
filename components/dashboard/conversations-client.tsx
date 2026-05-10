@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { contacts, conversations as seedConversations, leads } from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
-import { useConfigurableTemplates } from "@/lib/workspace-config";
+import { useConfigurableTemplates, useDepartments } from "@/lib/workspace-config";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { Card } from "@/components/ui/card";
@@ -75,11 +75,23 @@ export function ConversationsClient() {
   const [filterTag, setFilterTag] = useState<string>("todos");
   const [filterPriority, setFilterPriority] = useState<ConversationPriority | "todas">("todas");
   const [filterIntent, setFilterIntent] = useState<string>("todos");
+  const [filterDepartment, setFilterDepartment] = useState<string>("todos");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [toast, setToast] = useState("");
+  const { departments } = useDepartments();
+  const conversationDepartment: Record<string, string> = useMemo(() => {
+    // Map by category to default department (first one that includes the category).
+    const map: Record<string, string> = {};
+    items.forEach((c) => {
+      const dept = departments.find((d) => d.categoryIds.some((catId) => catId.includes(c.category.split(" ")[0])));
+      if (dept) map[c.id] = dept.id;
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, departments]);
 
   const workspaceItems = useMemo(
     () => items.filter((c) => c.workspaceId === activeWorkspaceId),
@@ -111,7 +123,10 @@ export function ConversationsClient() {
           if (c.status === "ganado" || c.status === "perdido" || c.status === "cerrado") return false;
         } else if (queue !== "todas" && c.status !== queue) return false;
         if (filterCategory !== "todas" && c.category !== filterCategory) return false;
-        if (filterAgent !== "todos" && c.assignedAgentId !== filterAgent) return false;
+        if (filterAgent === "sin-asignar") {
+          if (c.assignedAgentId) return false;
+        } else if (filterAgent !== "todos" && c.assignedAgentId !== filterAgent) return false;
+        if (filterDepartment !== "todos" && conversationDepartment[c.id] !== filterDepartment) return false;
         if (filterTag !== "todos" && !c.tags.includes(filterTag)) return false;
         if (filterPriority !== "todas" && c.priority !== filterPriority) return false;
         if (filterIntent !== "todos" && c.intent !== filterIntent) return false;
@@ -254,6 +269,26 @@ export function ConversationsClient() {
 
   return (
     <>
+      <div className="mb-3 flex flex-wrap items-center gap-1 rounded-2xl border border-white/10 bg-white/5 p-1 text-xs">
+        <button onClick={() => setFilterDepartment("todos")} className={`rounded-xl px-3 py-1.5 transition ${filterDepartment === "todos" ? "bg-cyan-500/20 text-cyan-100" : "text-zinc-300 hover:bg-white/10"}`}>
+          Todos los departamentos
+          <span className="ml-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">{workspaceItems.length}</span>
+        </button>
+        {departments.filter((d) => d.active !== false).map((d) => {
+          const count = workspaceItems.filter((c) => conversationDepartment[c.id] === d.id).length;
+          const isActive = filterDepartment === d.id;
+          return (
+            <button key={d.id} onClick={() => setFilterDepartment(d.id)} className={`rounded-xl px-3 py-1.5 transition ${isActive ? "bg-cyan-500/20 text-cyan-100" : "text-zinc-300 hover:bg-white/10"}`}>
+              {d.name}
+              <span className="ml-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">{count}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => { setFilterDepartment("todos"); setFilterAgent("sin-asignar"); }} className={`ml-auto rounded-xl px-3 py-1.5 text-xs transition ${filterAgent === "sin-asignar" ? "bg-rose-500/20 text-rose-100" : "text-zinc-300 hover:bg-white/10"}`}>
+          Sin asignar
+          <span className="ml-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">{workspaceItems.filter((c) => !c.assignedAgentId).length}</span>
+        </button>
+      </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-8">
         {queues.map((q) => (
           <button
@@ -292,11 +327,19 @@ export function ConversationsClient() {
           </select>
           <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
             <option value="todos" className="bg-[#0b1023]">Todos los operadores</option>
-            <option value="" className="bg-[#0b1023]">Sin asignar</option>
+            <option value="sin-asignar" className="bg-[#0b1023]">Sin asignar</option>
             {workspaceAgents.map((a) => (
               <option key={a.id} value={a.id} className="bg-[#0b1023]">{a.name}</option>
             ))}
           </select>
+          {departments.length > 0 ? (
+            <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm" aria-label="Departamento">
+              <option value="todos" className="bg-[#0b1023]">Todos los departamentos</option>
+              {departments.filter((d) => d.active !== false).map((d) => (
+                <option key={d.id} value={d.id} className="bg-[#0b1023]">{d.name}</option>
+              ))}
+            </select>
+          ) : null}
           <select value={filterIntent} onChange={(e) => setFilterIntent(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
             <option value="todos" className="bg-[#0b1023]">Todos los intents</option>
             {allIntents.map((t) => (
@@ -439,6 +482,50 @@ export function ConversationsClient() {
                     <Button onClick={() => changeStatus("cerrado")}>Cerrar</Button>
                     <Button onClick={() => setToast(`Seguimiento agendado: ${selected.nextTask}`)}>Agendar follow-up</Button>
                   </div>
+
+                  <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2">
+                    <p className="px-1 text-[10px] uppercase tracking-wide text-zinc-500">Acciones rápidas</p>
+                    <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-5">
+                      <button
+                        onClick={() => {
+                          const target = workspaceAgents.find((a) => a.id !== selected.assignedAgentId);
+                          if (target) { assignAgent(target.id); setToast(`Conversación transferida a ${target.name}.`); }
+                          else setToast("No hay otro operador disponible para transferir.");
+                        }}
+                        className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 hover:bg-white/10"
+                      >
+                        Transferir
+                      </button>
+                      <button
+                        onClick={() => { updateConversation(selected.id, { priority: "alta", status: "en curso" }, { id: `ev-${Date.now()}`, type: "stage", label: "Escalada por urgencia", when: "Ahora" }); setToast("Conversación escalada y prioridad alta."); }}
+                        className="rounded-lg border border-rose-300/30 bg-rose-500/10 px-2 py-1.5 text-rose-100 hover:bg-rose-500/15"
+                      >
+                        Escalar
+                      </button>
+                      <button
+                        onClick={() => { addTag("urgente"); updateConversation(selected.id, { priority: "alta" }); setToast("Marcada como urgente."); }}
+                        className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-2 py-1.5 text-amber-100 hover:bg-amber-500/15"
+                      >
+                        Marcar urgente
+                      </button>
+                      <button
+                        onClick={() => {
+                          const due = new Date(Date.now() + 30 * 60 * 1000).toISOString().slice(0, 16);
+                          updateConversation(selected.id, { nextTask: `Tarea: ${selected.intent}`, nextTaskDueDate: due }, { id: `ev-${Date.now()}`, type: "note", label: "Tarea creada", when: "Ahora" });
+                          setToast("Tarea creada con vencimiento en 30 min.");
+                        }}
+                        className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-2 py-1.5 text-cyan-100 hover:bg-cyan-500/15"
+                      >
+                        Crear tarea
+                      </button>
+                      <button
+                        onClick={() => { setToast(`Lead '${selected.customerName}' creado en pipeline.`); updateConversation(selected.id, {}, { id: `ev-${Date.now()}`, type: "stage", label: "Lead generado desde conversación", when: "Ahora" }); }}
+                        className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1.5 text-emerald-100 hover:bg-emerald-500/15"
+                      >
+                        Crear lead
+                      </button>
+                    </div>
+                  </div>
                 </Card>
 
                 <div className="space-y-3">
@@ -480,6 +567,12 @@ export function ConversationsClient() {
                       ))}
                     </select>
                     <p className="mt-1 text-[10px] text-zinc-500">La asignación persiste en esta sesión.</p>
+                    {departments.length > 0 ? (
+                      <div className="mt-2">
+                        <p className="text-[10px] uppercase tracking-wide text-zinc-500">Departamento</p>
+                        <p className="mt-1 text-xs text-zinc-300">{departments.find((d) => d.id === conversationDepartment[selected.id])?.name ?? "Sin asignar"}</p>
+                      </div>
+                    ) : null}
                   </Card>
 
                   <Card className="p-3">
