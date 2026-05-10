@@ -15,6 +15,9 @@ export type Category = {
   icon: string; // lucide icon name token
   isDefault: boolean;
   order: number;
+  slaMinutes: number;
+  defaultPriority: "alta" | "media" | "baja";
+  automationRef: string; // free-text rule reference for now
   usage: CategoryUsage;
 };
 
@@ -45,11 +48,22 @@ export type Pipeline = {
   stages: PipelineStageConfig[];
 };
 
+export type DepartmentRole = "responsable" | "supervisor" | "operador" | "lectura";
+
+export type DepartmentMember = {
+  memberId: string; // tm-*
+  role: DepartmentRole;
+};
+
 export type Department = {
   id: string;
   name: string;
   description: string;
-  memberIds: string[]; // tm-*
+  color: string;
+  active: boolean;
+  workingHours: string;
+  memberIds: string[]; // tm-* (legacy, mantener por compatibilidad)
+  members: DepartmentMember[]; // nuevo: con rol por miembro
   categoryIds: string[];
   slaMinutes: number;
   defaultBotId: string | null;
@@ -139,6 +153,36 @@ export type ConfigurableTemplate = {
   shortcut?: string; // /atajo
 };
 
+export type AIPrompt = {
+  id: string;
+  name: string;
+  intent: string;
+  body: string;
+  variables: string[];
+  updatedAt: string;
+};
+
+export type AIModelProfile = {
+  id: string;
+  provider: AIProvider;
+  model: string;
+  alias: string;
+  notes: string;
+  costPer1kTokens: number;
+  contextWindow: number;
+  isPrimary: boolean;
+};
+
+export type HelpArticle = {
+  id: string;
+  title: string;
+  category: "comenzando" | "whatsapp" | "ia" | "automatizaciones" | "campañas" | "facturacion" | "equipo";
+  body: string;
+  featured: boolean;
+  contextLinks: string[];
+  updatedAt: string;
+};
+
 export type WaneiaConfig = {
   categories: Category[];
   tags: TagItem[];
@@ -146,7 +190,10 @@ export type WaneiaConfig = {
   defaultPipelineId: string;
   departments: Department[];
   ai: AISettings;
+  aiPrompts: AIPrompt[];
+  aiModelProfiles: AIModelProfile[];
   knowledge: KnowledgeArticle[];
   botFlows: BotFlow[];
   templates: ConfigurableTemplate[];
+  helpArticles: HelpArticle[];
 };

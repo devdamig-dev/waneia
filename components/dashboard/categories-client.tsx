@@ -53,6 +53,9 @@ export function CategoriesClient() {
       icon: draft.icon,
       isDefault: false,
       order: categories.length,
+      slaMinutes: 30,
+      defaultPriority: "media",
+      automationRef: "—",
       usage: { conversations: 0, leads: 0, automations: 0, campaigns: 0 },
     };
     setCategories((prev) => [...prev, cat]);
@@ -93,10 +96,10 @@ export function CategoriesClient() {
               <th className="p-3">Orden</th>
               <th className="p-3">Categoría</th>
               <th className="p-3">Color</th>
-              <th className="p-3">Conversaciones</th>
-              <th className="p-3">Leads</th>
-              <th className="p-3">Automatizaciones</th>
-              <th className="p-3">Campañas</th>
+              <th className="p-3">SLA (min)</th>
+              <th className="p-3">Prioridad</th>
+              <th className="p-3">Automatización por defecto</th>
+              <th className="p-3">Uso</th>
               <th className="p-3">Default</th>
               <th className="p-3" />
             </tr>
@@ -117,10 +120,16 @@ export function CategoriesClient() {
                   </select>
                   <span className={`ml-2 inline-block h-3 w-3 rounded-full ${colorChip[c.color]}`} />
                 </td>
-                <td className="p-2 text-zinc-300">{c.usage.conversations}</td>
-                <td className="p-2 text-zinc-300">{c.usage.leads}</td>
-                <td className="p-2 text-zinc-300">{c.usage.automations}</td>
-                <td className="p-2 text-zinc-300">{c.usage.campaigns}</td>
+                <td className="p-2"><input type="number" value={c.slaMinutes} onChange={(e) => update(c.id, { slaMinutes: Number(e.target.value) })} className="w-16 rounded-lg border border-white/10 bg-white/5 p-1.5 text-sm" /></td>
+                <td className="p-2">
+                  <select value={c.defaultPriority} onChange={(e) => update(c.id, { defaultPriority: e.target.value as "alta" | "media" | "baja" })} className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-xs">
+                    <option value="alta" className="bg-[#0b1023]">alta</option>
+                    <option value="media" className="bg-[#0b1023]">media</option>
+                    <option value="baja" className="bg-[#0b1023]">baja</option>
+                  </select>
+                </td>
+                <td className="p-2"><input value={c.automationRef} onChange={(e) => update(c.id, { automationRef: e.target.value })} className="w-56 rounded-lg border border-white/10 bg-white/5 p-1.5 text-xs" placeholder="Plantilla / asignar / etiqueta" /></td>
+                <td className="p-2 text-[11px] text-zinc-400">conv {c.usage.conversations} · leads {c.usage.leads} · aut {c.usage.automations}</td>
                 <td className="p-2">
                   <button onClick={() => setDefault(c.id)} aria-label="Marcar default" className={`rounded-lg border px-2 py-1 text-[11px] ${c.isDefault ? "border-amber-300/40 bg-amber-500/10 text-amber-100" : "border-white/10 bg-white/5 text-zinc-400"}`}>
                     <Star className={`inline h-3.5 w-3.5 ${c.isDefault ? "fill-amber-300/60" : ""}`} />

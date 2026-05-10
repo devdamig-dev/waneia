@@ -18,12 +18,12 @@ const STORAGE_PREFIX = "waneia.config.";
 
 function makeDefaults(workspaceId: string): WaneiaConfig {
   const baseCategories: Category[] = [
-    { id: "cat-presupuesto", name: "Presupuesto", color: "emerald", icon: "DollarSign", isDefault: true, order: 0, usage: { conversations: 14, leads: 8, automations: 2, campaigns: 1 } },
-    { id: "cat-pedido", name: "Pedido", color: "cyan", icon: "Package", isDefault: false, order: 1, usage: { conversations: 9, leads: 3, automations: 1, campaigns: 0 } },
-    { id: "cat-consulta", name: "Consulta general", color: "violet", icon: "MessageCircle", isDefault: false, order: 2, usage: { conversations: 22, leads: 5, automations: 1, campaigns: 0 } },
-    { id: "cat-soporte", name: "Soporte", color: "amber", icon: "LifeBuoy", isDefault: false, order: 3, usage: { conversations: 6, leads: 0, automations: 1, campaigns: 0 } },
-    { id: "cat-reclamo", name: "Reclamo", color: "rose", icon: "AlertTriangle", isDefault: false, order: 4, usage: { conversations: 3, leads: 0, automations: 0, campaigns: 0 } },
-    { id: "cat-postventa", name: "Postventa", color: "sky", icon: "Heart", isDefault: false, order: 5, usage: { conversations: 4, leads: 1, automations: 0, campaigns: 1 } },
+    { id: "cat-presupuesto", name: "Presupuesto", color: "emerald", icon: "DollarSign", isDefault: true, order: 0, slaMinutes: 10, defaultPriority: "alta", automationRef: "Plantilla Cotización rápida + asignar a Ventas", usage: { conversations: 14, leads: 8, automations: 2, campaigns: 1 } },
+    { id: "cat-pedido", name: "Pedido", color: "cyan", icon: "Package", isDefault: false, order: 1, slaMinutes: 20, defaultPriority: "media", automationRef: "ETA automática + agregar etiqueta seguimiento", usage: { conversations: 9, leads: 3, automations: 1, campaigns: 0 } },
+    { id: "cat-consulta", name: "Consulta general", color: "violet", icon: "MessageCircle", isDefault: false, order: 2, slaMinutes: 30, defaultPriority: "media", automationRef: "Responder FAQ + ofrecer humano", usage: { conversations: 22, leads: 5, automations: 1, campaigns: 0 } },
+    { id: "cat-soporte", name: "Soporte", color: "amber", icon: "LifeBuoy", isDefault: false, order: 3, slaMinutes: 15, defaultPriority: "alta", automationRef: "Asignar a Soporte + crear ticket", usage: { conversations: 6, leads: 0, automations: 1, campaigns: 0 } },
+    { id: "cat-reclamo", name: "Reclamo", color: "rose", icon: "AlertTriangle", isDefault: false, order: 4, slaMinutes: 5, defaultPriority: "alta", automationRef: "Notificar al líder + escalar", usage: { conversations: 3, leads: 0, automations: 0, campaigns: 0 } },
+    { id: "cat-postventa", name: "Postventa", color: "sky", icon: "Heart", isDefault: false, order: 5, slaMinutes: 60, defaultPriority: "baja", automationRef: "Encuesta CSAT a los 7 días", usage: { conversations: 4, leads: 1, automations: 0, campaigns: 1 } },
   ];
 
   const tags: TagItem[] = [
@@ -61,9 +61,34 @@ function makeDefaults(workspaceId: string): WaneiaConfig {
   };
 
   const departments: Department[] = [
-    { id: "dep-ventas", name: "Ventas", description: "Equipo comercial y cotizaciones.", memberIds: ["tm-2", "tm-3"], categoryIds: ["cat-presupuesto", "cat-pedido"], slaMinutes: 15, defaultBotId: "bf-bienvenida", routingRule: "category in [presupuesto, pedido]" },
-    { id: "dep-soporte", name: "Soporte", description: "Atención técnica y postventa.", memberIds: ["tm-1"], categoryIds: ["cat-soporte", "cat-reclamo"], slaMinutes: 30, defaultBotId: null, routingRule: "category in [soporte, reclamo]" },
-    { id: "dep-administracion", name: "Administración", description: "Facturación y administrativos.", memberIds: ["tm-1"], categoryIds: ["cat-postventa"], slaMinutes: 120, defaultBotId: null, routingRule: "tag = administracion" },
+    {
+      id: "dep-ventas", name: "Ventas", description: "Equipo comercial y cotizaciones.",
+      color: "emerald", active: true, workingHours: "Lun-Vie 09:00-19:00",
+      memberIds: ["tm-2", "tm-3"],
+      members: [
+        { memberId: "tm-2", role: "responsable" },
+        { memberId: "tm-3", role: "operador" },
+      ],
+      categoryIds: ["cat-presupuesto", "cat-pedido"], slaMinutes: 15, defaultBotId: "bf-bienvenida", routingRule: "category in [presupuesto, pedido]",
+    },
+    {
+      id: "dep-soporte", name: "Soporte", description: "Atención técnica y postventa.",
+      color: "amber", active: true, workingHours: "Lun-Sáb 09:00-20:00",
+      memberIds: ["tm-1"],
+      members: [
+        { memberId: "tm-1", role: "responsable" },
+      ],
+      categoryIds: ["cat-soporte", "cat-reclamo"], slaMinutes: 30, defaultBotId: null, routingRule: "category in [soporte, reclamo]",
+    },
+    {
+      id: "dep-administracion", name: "Administración", description: "Facturación y administrativos.",
+      color: "violet", active: true, workingHours: "Lun-Vie 10:00-18:00",
+      memberIds: ["tm-1"],
+      members: [
+        { memberId: "tm-1", role: "supervisor" },
+      ],
+      categoryIds: ["cat-postventa"], slaMinutes: 120, defaultBotId: null, routingRule: "tag = administracion",
+    },
   ];
 
   const ai: AISettings = {
@@ -130,6 +155,29 @@ function makeDefaults(workspaceId: string): WaneiaConfig {
     { id: "tpl-rec", name: "Reactivación inactivos", category: "cat-postventa", channel: "whatsapp", approved: false, body: "Hola {{nombre}}, hace tiempo que no nos vemos. Tenemos novedades para vos.", variables: ["nombre"], shortcut: "/reac" },
   ];
 
+  const aiPrompts: WaneiaConfig["aiPrompts"] = [
+    { id: "pr-1", name: "Resumen de conversación", intent: "Resumir el hilo en 3 bullets", body: "Sos un asistente comercial de {{negocio}}. Resumí esta conversación en 3 bullets accionables priorizando objeciones del cliente, valor estimado y próximo paso.", variables: ["negocio"], updatedAt: "2026-04-30T10:00:00Z" },
+    { id: "pr-2", name: "Detección de intención", intent: "Clasificar intent + confianza", body: "Clasificá el siguiente mensaje en una de estas intenciones: cotización, soporte, reclamo, postventa, derivación humana. Devolvé JSON con intent y confidence (0-1).", variables: [], updatedAt: "2026-04-28T10:00:00Z" },
+    { id: "pr-3", name: "Análisis de sentimiento", intent: "Detectar sentimiento", body: "Devolvé el sentimiento (positivo, neutral, negativo) y nivel de urgencia (alta, media, baja) del siguiente mensaje del cliente.", variables: [], updatedAt: "2026-04-25T10:00:00Z" },
+    { id: "pr-4", name: "Sugerir próxima respuesta", intent: "Generar respuesta sugerida", body: "Sos {{agente}} de {{negocio}}. Tono {{tono}}. Generá la próxima respuesta priorizando avanzar la venta. Máx 2 frases.", variables: ["agente", "negocio", "tono"], updatedAt: "2026-04-20T10:00:00Z" },
+  ];
+  const aiModelProfiles: WaneiaConfig["aiModelProfiles"] = [
+    { id: "mp-1", provider: "anthropic", model: "claude-sonnet-4-6", alias: "Equilibrado (default)", notes: "Mejor calidad/costo para inbox y resúmenes.", costPer1kTokens: 0.003, contextWindow: 200000, isPrimary: true },
+    { id: "mp-2", provider: "openai", model: "gpt-4o-mini", alias: "Rápido y barato", notes: "Para clasificación y análisis de sentimiento.", costPer1kTokens: 0.0006, contextWindow: 128000, isPrimary: false },
+    { id: "mp-3", provider: "anthropic", model: "claude-opus-4-7", alias: "Premium para casos complejos", notes: "Razonamiento profundo, RAG sobre KB extensa.", costPer1kTokens: 0.015, contextWindow: 200000, isPrimary: false },
+    { id: "mp-4", provider: "gemini", model: "gemini-2.5-flash", alias: "Multimodal", notes: "Procesa imágenes y PDFs subidos por clientes.", costPer1kTokens: 0.0008, contextWindow: 1000000, isPrimary: false },
+  ];
+  const helpArticles: WaneiaConfig["helpArticles"] = [
+    { id: "hlp-1", title: "Conectar tu cuenta de WhatsApp Business", category: "whatsapp", featured: true, body: "Pasos para vincular Meta Business, validar webhook y subir plantillas iniciales aprobadas.", contextLinks: ["/dashboard/integracion-whatsapp"], updatedAt: "2026-05-01T09:00:00Z" },
+    { id: "hlp-2", title: "Configurar el motor de IA paso a paso", category: "ia", featured: true, body: "Cómo elegir proveedor, modelo, temperatura y tono adecuado para tu negocio. Cuándo usar fallback humano.", contextLinks: ["/dashboard/ia"], updatedAt: "2026-04-28T09:00:00Z" },
+    { id: "hlp-3", title: "Crear tu primer flujo de bot", category: "automatizaciones", featured: true, body: "Construí un flujo de bienvenida → calificación → derivación con bloques de pregunta, condición y acción.", contextLinks: ["/dashboard/bots"], updatedAt: "2026-04-26T09:00:00Z" },
+    { id: "hlp-4", title: "Diseñar tu pipeline comercial", category: "comenzando", featured: true, body: "Tips para definir etapas, probabilidad y SLA por etapa. Cómo medir el embudo y mejorarlo.", contextLinks: ["/dashboard/configuracion/pipelines", "/dashboard/leads"], updatedAt: "2026-04-22T09:00:00Z" },
+    { id: "hlp-5", title: "Lanzar campañas WhatsApp con cumplimiento", category: "campañas", featured: false, body: "Solo se pueden enviar mensajes a contactos con opt-in válido. Cómo trabajar con plantillas HSM aprobadas por Meta.", contextLinks: ["/dashboard/campanias"], updatedAt: "2026-04-20T09:00:00Z" },
+    { id: "hlp-6", title: "Invitar y gestionar tu equipo", category: "equipo", featured: false, body: "Cómo invitar miembros, asignar roles (owner, admin, operador, viewer) y monitorear performance.", contextLinks: ["/dashboard/equipo"], updatedAt: "2026-04-18T09:00:00Z" },
+    { id: "hlp-7", title: "Planes y consumo", category: "facturacion", featured: false, body: "Diferencia entre Starter, Growth y Pro. Qué incluye cada uno, cómo subir de plan y entender el consumo.", contextLinks: ["/dashboard/facturacion"], updatedAt: "2026-04-15T09:00:00Z" },
+    { id: "hlp-8", title: "Cargar la base de conocimiento de la IA", category: "ia", featured: false, body: "Subí PDFs, FAQ y catálogos para que la IA conteste con contexto real de tu negocio.", contextLinks: ["/dashboard/base-conocimiento"], updatedAt: "2026-04-12T09:00:00Z" },
+  ];
+
   return {
     categories: baseCategories,
     tags,
@@ -137,9 +185,12 @@ function makeDefaults(workspaceId: string): WaneiaConfig {
     defaultPipelineId: defaultPipeline.id,
     departments,
     ai: workspaceId === "ws-1" ? ai : { ...ai, enabled: false, model: "gpt-4o-mini" },
+    aiPrompts,
+    aiModelProfiles,
     knowledge,
     botFlows,
     templates,
+    helpArticles,
   };
 }
 
@@ -172,6 +223,33 @@ export function WorkspaceConfigProvider({ children }: { children: React.ReactNod
       initial = null;
     }
     if (!initial) initial = makeDefaults(activeWorkspaceId);
+    else {
+      // forward-compat migration: fill in fields added in newer versions
+      const defaults = makeDefaults(activeWorkspaceId);
+      const migrated: WaneiaConfig = {
+        ...defaults,
+        ...initial,
+        categories: (initial.categories ?? defaults.categories).map((c) => ({
+          ...defaults.categories[0],
+          ...c,
+          slaMinutes: c.slaMinutes ?? 30,
+          defaultPriority: c.defaultPriority ?? "media",
+          automationRef: c.automationRef ?? "—",
+        })),
+        departments: (initial.departments ?? defaults.departments).map((d) => ({
+          ...d,
+          color: d.color ?? "cyan",
+          active: d.active ?? true,
+          workingHours: d.workingHours ?? "Lun-Vie 09:00-18:00",
+          members: d.members ?? (d.memberIds ?? []).map((id) => ({ memberId: id, role: "operador" as const })),
+          memberIds: d.memberIds ?? (d.members ?? []).map((m) => m.memberId),
+        })),
+        aiPrompts: initial.aiPrompts ?? defaults.aiPrompts,
+        aiModelProfiles: initial.aiModelProfiles ?? defaults.aiModelProfiles,
+        helpArticles: initial.helpArticles ?? defaults.helpArticles,
+      };
+      initial = migrated;
+    }
     setConfigByWs((prev) => ({ ...prev, [activeWorkspaceId]: initial! }));
     setHydrated(true);
   }, [activeWorkspaceId, configByWs]);
@@ -280,5 +358,29 @@ export function useConfigurableTemplates() {
   return {
     templates: config.templates,
     setTemplates: (updater: (prev: ConfigurableTemplate[]) => ConfigurableTemplate[]) => setConfig((p) => ({ ...p, templates: updater(p.templates) })),
+  };
+}
+
+export function useAIPrompts() {
+  const { config, setConfig } = useWorkspaceConfig();
+  return {
+    prompts: config.aiPrompts,
+    setPrompts: (updater: (prev: WaneiaConfig["aiPrompts"]) => WaneiaConfig["aiPrompts"]) => setConfig((p) => ({ ...p, aiPrompts: updater(p.aiPrompts) })),
+  };
+}
+
+export function useAIModelProfiles() {
+  const { config, setConfig } = useWorkspaceConfig();
+  return {
+    profiles: config.aiModelProfiles,
+    setProfiles: (updater: (prev: WaneiaConfig["aiModelProfiles"]) => WaneiaConfig["aiModelProfiles"]) => setConfig((p) => ({ ...p, aiModelProfiles: updater(p.aiModelProfiles) })),
+  };
+}
+
+export function useHelpArticles() {
+  const { config, setConfig } = useWorkspaceConfig();
+  return {
+    articles: config.helpArticles,
+    setArticles: (updater: (prev: WaneiaConfig["helpArticles"]) => WaneiaConfig["helpArticles"]) => setConfig((p) => ({ ...p, helpArticles: updater(p.helpArticles) })),
   };
 }

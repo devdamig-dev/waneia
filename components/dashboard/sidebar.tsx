@@ -9,6 +9,7 @@ import {
   CreditCard,
   FileText,
   Gauge,
+  HelpCircle,
   MegaphoneIcon,
   MessageCircleMore,
   Plug,
@@ -47,6 +48,7 @@ const items: NavItem[] = [
   { href: "/dashboard/equipo", label: "Equipo", icon: UsersRound, group: "cuenta" },
   { href: "/dashboard/facturacion", label: "Facturación", icon: CreditCard, group: "cuenta" },
   { href: "/dashboard/configuracion", label: "Configuración", icon: Settings, group: "cuenta" },
+  { href: "/dashboard/ayuda", label: "Ayuda", icon: HelpCircle, group: "cuenta", badge: "Nuevo" },
 ];
 
 const groupOrder = ["operación", "ventas", "automatización", "ia", "insights", "cuenta"];
