@@ -10,13 +10,17 @@ import {
   Clock3,
   ExternalLink,
   Flame,
+  Mic,
+  Paperclip,
   Send,
+  Smile,
   Sparkles,
   StickyNote,
   Tag as TagIcon,
   TimerReset,
   User,
   UserPlus,
+  Wand,
   XCircle,
 } from "lucide-react";
 import { contacts, conversations as seedConversations, leads } from "@/data/mock-data";
@@ -403,7 +407,8 @@ export function ConversationsClient() {
                   <p className="text-sm text-zinc-400">{selected.phone} · {selected.businessName}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className={`rounded-full border px-2 py-1 ${toneChip[formatSla(selected.slaMinutesRemaining).tone]}`}>
+                  <span className={`relative rounded-full border px-2 py-1 ${toneChip[formatSla(selected.slaMinutesRemaining).tone]}`}>
+                    {formatSla(selected.slaMinutesRemaining).tone === "rose" ? <span className="absolute -left-0.5 -top-0.5 inline-flex h-2 w-2 animate-ping rounded-full bg-rose-400" aria-hidden /> : null}
                     <TimerReset className="mr-1 inline h-3.5 w-3.5" />{formatSla(selected.slaMinutesRemaining).text}
                   </span>
                   <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2 py-1 text-cyan-100"><Flame className="mr-1 inline h-3.5 w-3.5" />Puntaje {selected.leadScore}</span>
@@ -429,9 +434,15 @@ export function ConversationsClient() {
                   </div>
 
                   <Card className="mt-3 border-cyan-300/30 bg-cyan-500/10 p-3 text-sm text-cyan-100">
-                    <p className="inline-flex items-center gap-2 font-medium"><Bot className="h-4 w-4" /> Respuesta sugerida</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="inline-flex items-center gap-2 font-medium"><Bot className="h-4 w-4" /> Respuesta sugerida</p>
+                      <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-100">IA detectó oportunidad comercial</span>
+                    </div>
                     <p className="mt-1 text-zinc-100">{selected.suggestedReply}</p>
-                    <button onClick={useSuggested} className="mt-2 rounded-lg border border-cyan-300/40 bg-cyan-400/20 px-2 py-1 text-xs">Usar sugerencia</button>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button onClick={useSuggested} className="rounded-lg border border-cyan-300/40 bg-cyan-400/20 px-2 py-1 text-xs">Usar sugerencia</button>
+                      <span className="text-[10px] text-cyan-200/80">Confianza 92% · {selected.intent}</span>
+                    </div>
                   </Card>
 
                   <div className="mt-3 flex items-end gap-2">
@@ -444,6 +455,10 @@ export function ConversationsClient() {
                           const t = workspaceTemplates.find((x) => x.shortcut === reply.trim());
                           if (t) { e.preventDefault(); setReply(t.body); }
                         }
+                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                          e.preventDefault();
+                          sendReply();
+                        }
                       }}
                       placeholder="Escribí tu respuesta… o usá un atajo /cot, /fup, /post"
                       className="min-h-16 flex-1 rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
@@ -451,6 +466,43 @@ export function ConversationsClient() {
                     <Button onClick={sendReply} className="bg-emerald-500/30 hover:bg-emerald-500/40">
                       <Send className="mr-1 h-4 w-4" />Enviar
                     </Button>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+                    <span className="inline-flex items-center gap-1"><Wand className="h-3 w-3" /> Reformular con IA:</span>
+                    {[
+                      { tone: "Profesional", prefix: "Estimado/a, " },
+                      { tone: "Amable", prefix: "¡Hola! 😊 " },
+                      { tone: "Venta", prefix: "¡Tengo una oportunidad para vos! " },
+                      { tone: "Soporte", prefix: "Lamento la situación. " },
+                      { tone: "Breve", prefix: "" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.tone}
+                        onClick={() => {
+                          const base = (reply || selected.suggestedReply || "").replace(/^¡?Hola[^,]*,?\s*/i, "");
+                          const out = opt.tone === "Breve" ? base.split(".").slice(0, 1).join(".") + (base.endsWith(".") ? "" : ".") : `${opt.prefix}${base}`;
+                          setReply(out);
+                          setToast(`Mensaje reformulado en tono ${opt.tone.toLowerCase()}.`);
+                        }}
+                        className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-0.5 text-violet-100 hover:bg-violet-500/20"
+                      >
+                        {opt.tone}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-400">
+                    <button onClick={() => setReply((p) => `${p} 😊`)} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 hover:bg-white/10" title="Insertar emoji">
+                      <Smile className="h-3 w-3" />Emoji
+                    </button>
+                    <button onClick={() => setToast("Adjunto cargado (mock).")} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 hover:bg-white/10" title="Adjuntar archivo">
+                      <Paperclip className="h-3 w-3" />Adjuntar
+                    </button>
+                    <button onClick={() => setToast("Grabación de audio iniciada (mock).")} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 hover:bg-white/10" title="Grabar audio">
+                      <Mic className="h-3 w-3" />Audio
+                    </button>
+                    <span className="ml-auto rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">⌘ + Enter para enviar</span>
                   </div>
 
                   {workspaceTemplates.length > 0 ? (
@@ -529,6 +581,16 @@ export function ConversationsClient() {
                 </Card>
 
                 <div className="space-y-3">
+                  <Card className="border-violet-300/30 bg-violet-500/5 p-3">
+                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-violet-200"><Sparkles className="h-3.5 w-3.5" /> Resumen IA</p>
+                    <p className="mt-1 text-xs text-zinc-200">{selected.intent}. Cliente con score {selected.leadScore} y prioridad {selected.priority}. Recomendación: {selected.nextTask}.</p>
+                    <div className="mt-2 grid grid-cols-3 gap-1.5 text-[10px]">
+                      <div className="rounded-lg border border-white/10 bg-white/5 p-1.5"><p className="text-zinc-500 uppercase tracking-wide">Score</p><p className={`mt-0.5 font-semibold ${selected.leadScore >= 70 ? "text-emerald-200" : selected.leadScore >= 50 ? "text-amber-200" : "text-rose-200"}`}>{selected.leadScore}/100</p></div>
+                      <div className="rounded-lg border border-white/10 bg-white/5 p-1.5"><p className="text-zinc-500 uppercase tracking-wide">Sentimiento</p><p className="mt-0.5 font-semibold capitalize">{selected.priority === "alta" ? "neutral" : "positivo"}</p></div>
+                      <div className="rounded-lg border border-white/10 bg-white/5 p-1.5"><p className="text-zinc-500 uppercase tracking-wide">Urgencia</p><p className={`mt-0.5 font-semibold capitalize ${selected.priority === "alta" ? "text-rose-200" : selected.priority === "media" ? "text-amber-200" : "text-zinc-300"}`}>{selected.priority}</p></div>
+                    </div>
+                  </Card>
+
                   <Card className="p-3">
                     <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><User className="h-3.5 w-3.5" /> Perfil del cliente</p>
                     <p className="mt-2 text-sm font-semibold">{selectedContact?.name}</p>
