@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, MessageCircleMore, Plus, Search } from "lucide-react";
+import { Activity, BookOpen, ExternalLink, MegaphoneIcon, MessageCircleMore, Plus, Search, Sparkles, TrendingUp } from "lucide-react";
+import { Drawer } from "@/components/ui/drawer";
 import {
   campaigns as seedCampaigns,
   contacts as seedContacts,
@@ -48,6 +49,7 @@ export function ContactsClient() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState({ name: "", phone: "", email: "", business: "", source: "WhatsApp", lifecycle: "nuevo" as ContactLifecycle, optIn: true });
 
@@ -220,6 +222,7 @@ export function ContactsClient() {
                   <span className={`rounded-full border px-2 py-0.5 ${lifecycleClasses[selected.lifecycle]}`}>{selected.lifecycle}</span>
                   <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-zinc-300">Origen: {selected.source}</span>
                   <span className={`rounded-full border px-2 py-0.5 ${selected.optIn ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" : "border-rose-300/40 bg-rose-500/10 text-rose-100"}`}>{selected.optIn ? "Opt-in activo" : "Opt-in revocado"}</span>
+                  <Button onClick={() => setDrawerOpen(true)} className="ml-auto bg-cyan-500/30 hover:bg-cyan-500/40"><Activity className="mr-1 h-3.5 w-3.5" />Ficha completa</Button>
                 </div>
               </div>
 
@@ -320,6 +323,67 @@ export function ContactsClient() {
         </div>
         <Button onClick={addContact} className="mt-4 w-full bg-emerald-500/30 hover:bg-emerald-500/40">Agregar contacto</Button>
       </Modal>
+
+      <Drawer
+        open={drawerOpen && Boolean(selected)}
+        onClose={() => setDrawerOpen(false)}
+        title={selected?.name ?? "Contacto"}
+        description={selected ? `${selected.phone}${selected.email ? ` · ${selected.email}` : ""}` : ""}
+        width="max-w-lg"
+      >
+        {selected ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+              <Card className="p-2"><p className="text-zinc-500">Conversaciones</p><p className="mt-1 text-lg font-bold">{selected.totalConversations}</p></Card>
+              <Card className="p-2"><p className="text-zinc-500">Oportunidades</p><p className="mt-1 text-lg font-bold text-emerald-200">{contactLeads.length}</p></Card>
+              <Card className="p-2"><p className="text-zinc-500">Valor total</p><p className="mt-1 text-lg font-bold text-cyan-200">{formatCurrency(contactLeads.reduce((acc, l) => acc + l.estimatedValue, 0))}</p></Card>
+            </div>
+
+            <Card className="border-violet-300/30 bg-violet-500/5 p-3 text-xs">
+              <p className="inline-flex items-center gap-1 font-semibold text-violet-200"><Sparkles className="h-3.5 w-3.5" /> Insights de IA</p>
+              <ul className="mt-2 space-y-1 text-zinc-200">
+                <li>· Cliente con engagement {selected.lifecycle === "cliente activo" ? "alto" : "medio"} y sentimiento positivo histórico.</li>
+                <li>· Productos consultados: placard 2.5m, vestidor 3.5m.</li>
+                <li>· Recomendación: enviar plantilla de cotización + agendar visita técnica.</li>
+              </ul>
+            </Card>
+
+            <Card className="p-3">
+              <p className="text-xs uppercase tracking-wide text-zinc-400">Línea de tiempo</p>
+              <ol className="relative mt-3 space-y-3 border-l border-white/10 pl-4">
+                {[
+                  { icon: MessageCircleMore, when: "Hoy 10:42", title: "Mensaje recibido", body: selected.lastInteraction },
+                  { icon: TrendingUp, when: "Hoy 09:30", title: "Lead movido a Cotizando", body: "Carla avanzó por interacción reciente." },
+                  { icon: Sparkles, when: "Ayer 17:11", title: "IA detectó intención de compra", body: "Confianza 92% sobre cotización mayorista." },
+                  { icon: MegaphoneIcon, when: "Hace 3 días", title: "Recibió campaña 'Promo primavera'", body: "Abrió mensaje y respondió consultando precio." },
+                  { icon: BookOpen, when: "Hace 1 sem", title: "Primer contacto", body: `Origen: ${selected.source}` },
+                ].map((ev, idx) => (
+                  <li key={idx} className="relative">
+                    <span className="absolute -left-[1.2rem] top-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border border-cyan-300/30 bg-[#070b1c]">
+                      <ev.icon className="h-2.5 w-2.5 text-cyan-300" />
+                    </span>
+                    <p className="text-xs font-medium">{ev.title}</p>
+                    <p className="text-[11px] text-zinc-400">{ev.body}</p>
+                    <p className="mt-0.5 text-[10px] text-zinc-500">{ev.when}</p>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+
+            <Card className="p-3">
+              <p className="text-xs uppercase tracking-wide text-zinc-400">Etiquetas</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {selected.tags.map((t) => <span key={t} className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-100">#{t}</span>)}
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Link href={`/dashboard/conversaciones?id=${contactConversations[0]?.id ?? ""}`} className="rounded-xl border border-cyan-300/30 bg-cyan-500/10 px-3 py-2 text-center text-xs text-cyan-100 hover:bg-cyan-500/20">Abrir conversación</Link>
+              <Link href="/dashboard/leads" className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-center text-xs text-emerald-100 hover:bg-emerald-500/20">Ver en pipeline</Link>
+            </div>
+          </div>
+        ) : null}
+      </Drawer>
 
       <Toast message={toast} onClose={() => setToast("")} />
     </>

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Search } from "lucide-react";
+import { Command, Search } from "lucide-react";
 import { workspaces } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
+import { NotificationsBell } from "@/components/dashboard/notifications-bell";
 import { BUILD_TAG } from "@/lib/version";
 
 const navItems = [
@@ -33,10 +34,17 @@ export function Topbar() {
 
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
-      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-zinc-400">
+      <button
+        onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))}
+        className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200"
+        aria-label="Abrir buscador rápido"
+      >
         <Search className="h-4 w-4" />
         <span className="text-sm">{current ? `Estás en ${current.label}` : "Buscar conversaciones, contactos o etiquetas"}</span>
-      </div>
+        <span className="ml-3 hidden items-center gap-0.5 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300 sm:inline-flex">
+          <Command className="h-3 w-3" />K
+        </span>
+      </button>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-2 py-1.5">
           <span className="hidden text-[10px] uppercase tracking-wide text-zinc-500 sm:inline">Workspace</span>
@@ -56,7 +64,7 @@ export function Topbar() {
         <Link href="/dashboard/onboarding" className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100 hover:bg-emerald-500/20">
           Configuración inicial {activeWorkspace.onboardingCompletion}%
         </Link>
-        <button className="rounded-xl border border-white/10 bg-white/10 p-2 text-zinc-200" aria-label="Notificaciones"><Bell className="h-4 w-4" /></button>
+        <NotificationsBell />
         <span className="hidden rounded-full border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-emerald-100 md:inline" title="Versión actual del build">{BUILD_TAG}</span>
         <div className="rounded-xl border border-cyan-300/30 bg-cyan-400/20 px-3 py-2 text-sm font-semibold" title="Camila Romero">CR</div>
       </div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   Bot,
@@ -22,6 +23,7 @@ import {
   leads,
   pipelineStages,
 } from "@/data/mock-data";
+import { useNotifications, timeAgo } from "@/lib/notifications";
 import { teamMembers, usageByWorkspace } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
@@ -41,6 +43,7 @@ const formatCurrency = (n: number) =>
 
 export function DashboardClient() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const { items: notifs } = useNotifications();
   const wsConversations = conversations.filter((c) => c.workspaceId === activeWorkspaceId);
   const wsLeads = leads.filter((l) => l.workspaceId === activeWorkspaceId);
   const wsContacts = contacts.filter((c) => c.workspaceId === activeWorkspaceId);
@@ -205,6 +208,31 @@ export function DashboardClient() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-5">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold inline-flex items-center gap-2"><Activity className="h-4 w-4 text-cyan-300" />Actividad en vivo</p>
+          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-200"><span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />en tiempo real</span>
+        </div>
+        <p className="mt-1 text-xs text-zinc-400">Eventos del workspace, alertas de IA y movimientos del equipo. Se actualiza automáticamente.</p>
+        <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+          {notifs.slice(0, 8).map((n) => (
+            <div key={n.id} className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/5 p-2.5 text-xs">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-500/10 text-cyan-100">
+                {n.kind === "sla" ? "⏰" : n.kind === "ia" ? "✨" : n.kind === "lead" ? "📈" : n.kind === "automation" ? "🤖" : n.kind === "campaign" ? "📣" : n.kind === "asignacion" ? "👥" : "🔔"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-zinc-100">{n.title}</p>
+                  <span className="shrink-0 text-[10px] text-zinc-500">{timeAgo(n.createdAt)}</span>
+                </div>
+                <p className="text-[11px] text-zinc-400">{n.body}</p>
+              </div>
+            </div>
+          ))}
+          {notifs.length === 0 ? <p className="rounded-lg border border-white/10 bg-white/5 p-4 text-center text-xs text-zinc-500">Sin eventos recientes.</p> : null}
+        </div>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5">
