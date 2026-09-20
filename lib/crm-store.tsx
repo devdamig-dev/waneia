@@ -1,14 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { conversations as seedConversations, leads as seedLeads } from "@/data/mock-data";
 import { Conversation, Lead } from "@/types/entities";
 
 type CRMStoreValue = {
   conversations: Conversation[];
-  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
+  setConversations: Dispatch<SetStateAction<Conversation[]>>;
   leads: Lead[];
-  setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
+  setLeads: Dispatch<SetStateAction<Lead[]>>;
   createLeadFromConversation: (conversation: Conversation) => string;
 };
 
@@ -85,7 +85,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
               ...item,
               linkedLeadId: id,
               activity: [
-                { id: `ev-${Date.now()}`, type: "stage", label: "Oportunidad creada desde Inbox", when: "Ahora" },
+                { id: `ev-${Date.now()}`, type: "stage" as const, label: "Oportunidad creada desde Inbox", when: "Ahora" },
                 ...item.activity,
               ],
             }
