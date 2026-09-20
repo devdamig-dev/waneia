@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarClock, ChevronLeft, ChevronRight, ExternalLink, GitBranch, MessageCircleMore, Plus, Tag as TagIcon, X } from "lucide-react";
-import { conversations as seedConversations, contacts as seedContacts, leads as seedLeads } from "@/data/mock-data";
+import { conversations as seedConversations, contacts as seedContacts } from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { usePipelines } from "@/lib/workspace-config";
@@ -15,6 +15,7 @@ import { Toast } from "@/components/ui/toast";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
 import { ConversationCategory, Lead } from "@/types/entities";
 import { PipelineStageConfig } from "@/types/config";
+import { useCRMStore } from "@/lib/crm-store";
 
 const stageBorderClass: Record<string, string> = {
   cyan: "border-cyan-300/40",
@@ -41,7 +42,7 @@ const formatCurrency = (n: number) =>
 export function LeadsClient() {
   const { activeWorkspaceId } = useWorkspace();
   const { pipelines, defaultPipelineId } = usePipelines();
-  const [items, setItems] = useState<Lead[]>(seedLeads);
+  const { leads: items, setLeads: setItems } = useCRMStore();
   const [agentFilter, setAgentFilter] = useState("todos");
   const [categoryFilter, setCategoryFilter] = useState<ConversationCategory | "todas">("todas");
   const [search, setSearch] = useState("");
