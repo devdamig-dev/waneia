@@ -127,7 +127,7 @@ export function ConversationsClient() {
       if (queue === "urgentes" && (isClosed(conversation.status) || (conversation.priority !== "alta" && conversation.slaMinutesRemaining > 5))) return false;
       if (departmentFilter !== "todos" && conversationDepartment[conversation.id] !== departmentFilter) return false;
       if (categoryFilter !== "todas" && conversation.category !== categoryFilter) return false;
-      if (search && !\`\${conversation.customerName} \${conversation.phone} \${conversation.businessName} \${conversation.lastMessage}\`.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search && !`${conversation.customerName} ${conversation.phone} ${conversation.businessName} ${conversation.lastMessage}`.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
 
@@ -190,19 +190,19 @@ export function ConversationsClient() {
     if (!selected) return;
     updateConversation(selected.id, { assignedAgentId: agentId || null });
     const name = workspaceAgents.find((agent) => agent.id === agentId)?.name ?? "Sin asignar";
-    setToast(\`Responsable actualizado: \${name}.\`);
+    setToast(`Responsable actualizado: ${name}.`);
   };
 
   const changeStatus = (status: ConversationStatus) => {
     if (!selected) return;
     updateConversation(selected.id, { status });
-    setToast(status === "cerrado" ? "Conversación resuelta." : \`Conversación movida a \${status}.\`);
+    setToast(status === "cerrado" ? "Conversación resuelta." : `Conversación movida a ${status}.`);
   };
 
   const sendReply = () => {
     if (!selected || !reply.trim()) return;
     const now = new Date();
-    const stamp = \`\${now.getHours().toString().padStart(2, "0")}:\${now.getMinutes().toString().padStart(2, "0")}\`;
+    const stamp = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
     const agent = workspaceAgents.find((item) => item.id === selected.assignedAgentId) ?? workspaceAgents[0];
 
     setConversations((previous) =>
@@ -215,7 +215,7 @@ export function ConversationsClient() {
               messages: [
                 ...conversation.messages,
                 {
-                  id: \`m-\${Date.now()}\`,
+                  id: `m-${Date.now()}`,
                   sender: "agent" as const,
                   agentName: agent?.name ?? "Equipo",
                   content: reply.trim(),
@@ -241,8 +241,8 @@ export function ConversationsClient() {
   const saveNote = () => {
     if (!selected || !note.trim()) return;
     const text = selected.internalNotes
-      ? \`\${selected.internalNotes}\n· \${note.trim()}\`
-      : \`· \${note.trim()}\`;
+      ? `${selected.internalNotes}\n· ${note.trim()}`
+      : `· ${note.trim()}`;
     updateConversation(selected.id, { internalNotes: text });
     setNote("");
     setToast("Nota guardada.");
@@ -251,7 +251,7 @@ export function ConversationsClient() {
   const createOpportunity = () => {
     if (!selected) return;
     const id = createLeadFromConversation(selected);
-    setToast(\`Oportunidad creada y vinculada (\${id}).\`);
+    setToast(`Oportunidad creada y vinculada (${id}).`);
   };
 
   const updateLead = (patch: Partial<NonNullable<typeof selectedLead>>) => {
@@ -285,7 +285,7 @@ export function ConversationsClient() {
             >
               <Filter className="h-4 w-4" />
               Filtros
-              <ChevronDown className={\`h-3.5 w-3.5 transition \${showFilters ? "rotate-180" : ""}\`} />
+              <ChevronDown className={`h-3.5 w-3.5 transition ${showFilters ? "rotate-180" : ""}`} />
             </button>
           </div>
 
@@ -294,9 +294,9 @@ export function ConversationsClient() {
               <button
                 key={option.value}
                 onClick={() => setQueue(option.value)}
-                className={\`whitespace-nowrap rounded-xl px-3 py-2 text-xs transition \${
+                className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs transition ${
                   queue === option.value ? "bg-cyan-500/20 text-cyan-100" : "bg-white/5 text-zinc-300 hover:bg-white/10"
-                }\`}
+                }`}
               >
                 {option.label}
                 <span className="ml-1.5 rounded-full border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px]">
@@ -349,11 +349,11 @@ export function ConversationsClient() {
                   <button
                     key={conversation.id}
                     onClick={() => setSelectedId(conversation.id)}
-                    className={\`mb-1 w-full rounded-xl border p-3 text-left transition \${
+                    className={`mb-1 w-full rounded-xl border p-3 text-left transition ${
                       selected?.id === conversation.id
                         ? "border-cyan-300/40 bg-cyan-500/10"
                         : "border-transparent hover:border-white/10 hover:bg-white/5"
-                    }\`}
+                    }`}
                   >
                     <div className="flex items-start gap-2.5">
                       <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-xs font-semibold">
@@ -373,8 +373,8 @@ export function ConversationsClient() {
                             {isClosed(conversation.status)
                               ? conversation.status
                               : conversation.slaMinutesRemaining <= 0
-                                ? \`Vencido \${Math.abs(conversation.slaMinutesRemaining)}m\`
-                                : \`\${conversation.slaMinutesRemaining}m SLA\`}
+                                ? `Vencido ${Math.abs(conversation.slaMinutesRemaining)}m`
+                                : `${conversation.slaMinutesRemaining}m SLA`}
                           </span>
                           <span className="truncate text-zinc-500">{conversation.category}</span>
                         </div>
@@ -428,12 +428,12 @@ export function ConversationsClient() {
                       );
                     }
                     return (
-                      <div key={message.id} className={\`flex \${outgoing ? "justify-end" : "justify-start"}\`}>
-                        <div className={\`max-w-[82%] rounded-2xl px-3 py-2 text-sm \${
+                      <div key={message.id} className={`flex ${outgoing ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[82%] rounded-2xl px-3 py-2 text-sm ${
                           outgoing
                             ? "rounded-br-md bg-emerald-500/20 text-emerald-50"
                             : "rounded-bl-md border border-white/10 bg-white/5 text-zinc-100"
-                        }\`}>
+                        }`}>
                           {outgoing && message.agentName ? <p className="mb-1 text-[10px] text-emerald-200/70">{message.agentName}</p> : null}
                           <p>{message.content}</p>
                           <p className="mt-1 text-right text-[9px] text-zinc-500">{message.timestamp}</p>
