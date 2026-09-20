@@ -167,7 +167,7 @@ export function ConversationsClient() {
     if (!selected) return undefined;
     if (selected.linkedLeadId) return leads.find((l) => l.id === selected.linkedLeadId);
     return leads.find((l) => l.conversationId === selected.id || (l.contactId === selected.contactId && l.workspaceId === selected.workspaceId));
-  }, [selected]);
+  }, [selected, leads]);
 
   const counts = useMemo(() => {
     const out: Record<string, number> = { todas: workspaceItems.length };
