@@ -3,8 +3,10 @@ import { LeadsClient } from "@/components/dashboard/leads-client";
 export default function LeadsPage() {
   return (
     <section className="space-y-4">
-      <h2 className="text-2xl font-bold">Leads</h2>
-      <p className="text-zinc-400">CRM-lite para clasificar oportunidades y moverlas más rápido hacia venta.</p>
+      <div>
+        <h2 className="text-2xl font-bold">Ventas</h2>
+        <p className="mt-1 text-sm text-zinc-400">Seguí cada oportunidad desde el primer mensaje hasta el cierre.</p>
+      </div>
       <LeadsClient />
     </section>
   );
