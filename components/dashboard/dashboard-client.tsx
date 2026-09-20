@@ -12,6 +12,7 @@ import {
   UserRoundCheck,
   Users,
   Workflow,
+  type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { automationRules, contacts } from "@/data/mock-data";
@@ -143,7 +144,7 @@ export function DashboardClient() {
   );
 }
 
-function Metric({ label, value, detail, icon: Icon }: { label: string; value: string; detail: string; icon: typeof AlertTriangle }) {
+function Metric({ label, value, detail, icon: Icon }: { label: string; value: string; detail: string; icon: LucideIcon }) {
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
