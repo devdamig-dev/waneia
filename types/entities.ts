@@ -155,7 +155,7 @@ export type MessageTemplate = {
 export type AutomationStatus = "borrador" | "test" | "activa" | "pausada";
 
 export type AutomationTrigger = {
-  type: "palabras clave" | "intent" | "segmento" | "horario";
+  type: "nuevo mensaje" | "palabras clave" | "intent" | "sin respuesta" | "cambio de etapa" | "segmento" | "horario";
   value: string;
 };
 
@@ -174,7 +174,9 @@ export type AutomationAction = {
     | "asignar agente"
     | "agregar etiqueta"
     | "crear lead"
-    | "notificar equipo";
+    | "notificar equipo"
+    | "crear tarea"
+    | "mover etapa";
   value: string;
 };
 
