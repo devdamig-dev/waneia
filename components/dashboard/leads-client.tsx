@@ -96,7 +96,7 @@ export function LeadsClient() {
       leads.filter((lead) => {
         if (lead.workspaceId !== activeWorkspaceId) return false;
         if (agentFilter !== "todos" && lead.assignedAgentId !== agentFilter) return false;
-        if (search && !\`\${lead.name} \${lead.business} \${lead.phone}\`.toLowerCase().includes(search.toLowerCase())) return false;
+        if (search && !`${lead.name} ${lead.business} ${lead.phone}`.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
       }),
     [leads, activeWorkspaceId, agentFilter, search],
@@ -136,9 +136,9 @@ export function LeadsClient() {
   const createLead = () => {
     const firstStage = stages[0] ? slugifyStage(stages[0].name) : "nuevo";
     const created: Lead = {
-      id: \`l-\${Date.now()}\`,
+      id: `l-${Date.now()}`,
       workspaceId: activeWorkspaceId,
-      contactId: \`ct-\${Date.now()}\`,
+      contactId: `ct-${Date.now()}`,
       name: draft.name || "Oportunidad sin nombre",
       phone: draft.phone || "—",
       source: draft.source,
@@ -250,7 +250,7 @@ export function LeadsClient() {
           </Card>
         </div>
 
-        <div className="grid gap-3 overflow-x-auto pb-2" style={{ gridTemplateColumns: \`repeat(\${Math.max(stages.length, 1)}, minmax(230px, 1fr))\` }}>
+        <div className="grid gap-3 overflow-x-auto pb-2" style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(230px, 1fr))` }}>
           {stages.length === 0 ? (
             <Card className="p-6 text-center text-sm text-zinc-400">
               El pipeline no tiene etapas configuradas.
@@ -260,7 +260,7 @@ export function LeadsClient() {
             const stageLeads = workspaceLeads.filter((lead) => lead.stage === stageKey);
             const stageTotal = stageLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
             return (
-              <Card key={stage.id} className={\`min-w-[230px] border-t-2 p-3 \${stageTone[stage.color] ?? stageTone.cyan}\`}>
+              <Card key={stage.id} className={`min-w-[230px] border-t-2 p-3 ${stageTone[stage.color] ?? stageTone.cyan}`}>
                 <div className="mb-3 flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold">{stage.name}</p>
@@ -339,14 +339,14 @@ export function LeadsClient() {
         open={drawerOpen && Boolean(selected)}
         onClose={() => setDrawerOpen(false)}
         title={selected?.name ?? "Oportunidad"}
-        description={selected ? \`\${selected.business} · \${selected.phone}\` : ""}
+        description={selected ? `${selected.business} · ${selected.phone}` : ""}
         width="max-w-lg"
         footer={
           selected ? (
             <div className="flex gap-2">
               {selectedConversation ? (
                 <Link
-                  href={\`/dashboard/conversaciones?id=\${selectedConversation.id}\`}
+                  href={`/dashboard/conversaciones?id=${selectedConversation.id}`}
                   className="flex-1 rounded-xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-center text-xs text-cyan-100 hover:bg-cyan-500/20"
                 >
                   Abrir conversación
@@ -422,7 +422,7 @@ export function LeadsClient() {
                 </p>
                 <p className="mt-2 line-clamp-2 text-xs text-zinc-400">{selectedConversation.lastMessage}</p>
                 <Link
-                  href={\`/dashboard/conversaciones?id=\${selectedConversation.id}\`}
+                  href={`/dashboard/conversaciones?id=${selectedConversation.id}`}
                   className="mt-2 inline-flex items-center gap-1 text-xs text-cyan-200"
                 >
                   Ir al Inbox <ExternalLink className="h-3 w-3" />
