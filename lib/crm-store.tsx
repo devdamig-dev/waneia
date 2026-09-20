@@ -1,10 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { conversations as seedConversations, leads as seedLeads } from "@/data/mock-data";
-import { Conversation, Lead } from "@/types/entities";
+import { contacts as seedContacts, conversations as seedConversations, leads as seedLeads } from "@/data/mock-data";
+import { Contact, Conversation, Lead } from "@/types/entities";
 
 type CRMStoreValue = {
+  contacts: Contact[];
+  setContacts: Dispatch<SetStateAction<Contact[]>>;
   conversations: Conversation[];
   setConversations: Dispatch<SetStateAction<Conversation[]>>;
   leads: Lead[];
@@ -21,6 +23,7 @@ function parseEstimatedValue(value?: string) {
 }
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
+  const [contacts, setContacts] = useState<Contact[]>(seedContacts);
   const [conversations, setConversations] = useState<Conversation[]>(seedConversations);
   const [leads, setLeads] = useState<Lead[]>(seedLeads);
   const [hydrated, setHydrated] = useState(false);
@@ -29,7 +32,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as { conversations?: Conversation[]; leads?: Lead[] };
+        const saved = JSON.parse(raw) as { contacts?: Contact[]; conversations?: Conversation[]; leads?: Lead[] };
+        if (saved.contacts) setContacts(saved.contacts);
         if (saved.conversations) setConversations(saved.conversations);
         if (saved.leads) setLeads(saved.leads);
       }
@@ -43,11 +47,11 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ conversations, leads }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ contacts, conversations, leads }));
     } catch {
       // La demo sigue funcionando aunque localStorage esté lleno o bloqueado.
     }
-  }, [conversations, leads, hydrated]);
+  }, [contacts, conversations, leads, hydrated]);
 
   const createLeadFromConversation = useCallback((conversation: Conversation) => {
     const existing = leads.find(
@@ -96,8 +100,8 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [leads]);
 
   const value = useMemo(
-    () => ({ conversations, setConversations, leads, setLeads, createLeadFromConversation }),
-    [conversations, leads, createLeadFromConversation],
+    () => ({ contacts, setContacts, conversations, setConversations, leads, setLeads, createLeadFromConversation }),
+    [contacts, conversations, leads, createLeadFromConversation],
   );
 
   return <CRMStoreContext.Provider value={value}>{children}</CRMStoreContext.Provider>;
