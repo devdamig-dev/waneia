@@ -23,7 +23,7 @@ import {
   Wand,
   XCircle,
 } from "lucide-react";
-import { contacts, conversations as seedConversations, leads } from "@/data/mock-data";
+import { contacts } from "@/data/mock-data";
 import { teamMembers } from "@/data/saas-data";
 import { useConfigurableTemplates, useDepartments } from "@/lib/workspace-config";
 import { CategoryBadge } from "@/components/dashboard/category-badge";
@@ -39,6 +39,7 @@ import {
   ConversationStatus,
 } from "@/types/entities";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
+import { useCRMStore } from "@/lib/crm-store";
 
 const queues: Array<{ value: ConversationStatus | "todas" | "sla"; label: string; tone: string }> = [
   { value: "todas", label: "Todas", tone: "border-white/15 bg-white/5 text-zinc-200" },
@@ -72,7 +73,7 @@ const toneChip = {
 
 export function ConversationsClient() {
   const { activeWorkspaceId } = useWorkspace();
-  const [items, setItems] = useState<Conversation[]>(seedConversations);
+  const { conversations: items, setConversations: setItems, leads, createLeadFromConversation } = useCRMStore();
   const [queue, setQueue] = useState<(typeof queues)[number]["value"]>("todas");
   const [filterCategory, setFilterCategory] = useState<ConversationCategory | "todas">("todas");
   const [filterAgent, setFilterAgent] = useState<string>("todos");
@@ -141,13 +142,13 @@ export function ConversationsClient() {
           return false;
         return true;
       }),
-    [workspaceItems, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, search],
+    [workspaceItems, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, filterDepartment, conversationDepartment, search],
   );
 
   useEffect(() => {
     setSelectedId(filtered[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, search]);
+  }, [activeWorkspaceId, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, filterDepartment, search]);
 
   useEffect(() => {
     if (!selectedId && filtered[0]) setSelectedId(filtered[0].id);
@@ -571,7 +572,7 @@ export function ConversationsClient() {
                         Crear tarea
                       </button>
                       <button
-                        onClick={() => { setToast(`Lead '${selected.customerName}' creado en pipeline.`); updateConversation(selected.id, {}, { id: `ev-${Date.now()}`, type: "stage", label: "Lead generado desde conversación", when: "Ahora" }); }}
+                        onClick={() => { const id = createLeadFromConversation(selected); setToast(selectedLead ? "Esta conversación ya tiene una oportunidad vinculada." : `Oportunidad creada en Ventas (${id}).`); }}
                         className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1.5 text-emerald-100 hover:bg-emerald-500/15"
                       >
                         Crear lead
