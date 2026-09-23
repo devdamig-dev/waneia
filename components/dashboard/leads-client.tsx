@@ -14,8 +14,6 @@ import {
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import { contacts } from "@/data/mock-data";
-import { teamMembers } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { usePipelines } from "@/lib/workspace-config";
 import { useCRMStore } from "@/lib/crm-store";
@@ -51,8 +49,8 @@ const stageTone: Record<string, string> = {
 };
 
 export function LeadsClient() {
-  const { activeWorkspaceId } = useWorkspace();
-  const { leads, setLeads, conversations } = useCRMStore();
+  const { activeWorkspaceId, teamMembers, currentUserId } = useWorkspace();
+  const { leads, contacts, conversations, createLead: createLeadRecord, updateLead: persistLead } = useCRMStore();
   const { pipelines, defaultPipelineId } = usePipelines();
 
   const [search, setSearch] = useState("");
@@ -74,7 +72,7 @@ export function LeadsClient() {
 
   const workspaceAgents = useMemo(
     () => teamMembers.filter((member) => member.workspaceId === activeWorkspaceId && member.status === "active"),
-    [activeWorkspaceId],
+    [activeWorkspaceId, teamMembers],
   );
 
   useEffect(() => {
@@ -119,8 +117,8 @@ export function LeadsClient() {
   const dueFollowUps = openLeads.filter((lead) => lead.nextFollowUp && lead.nextFollowUp !== "—").length;
 
   const updateLead = (id: string, patch: Partial<Lead>) => {
-    setLeads((previous) =>
-      previous.map((lead) => (lead.id === id ? { ...lead, ...patch } : lead)),
+    void persistLead(id, patch).catch((err) =>
+      setToast(err instanceof Error ? err.message : "No se pudo guardar la oportunidad."),
     );
   };
 
@@ -133,39 +131,36 @@ export function LeadsClient() {
     updateLead(id, { stage: slugifyStage(target.name) as Lead["stage"] });
   };
 
-  const createLead = () => {
+  const createLead = async () => {
     const firstStage = stages[0] ? slugifyStage(stages[0].name) : "nuevo";
-    const created: Lead = {
-      id: `l-${Date.now()}`,
-      workspaceId: activeWorkspaceId,
-      contactId: `ct-${Date.now()}`,
-      name: draft.name || "Oportunidad sin nombre",
-      phone: draft.phone || "—",
-      source: draft.source,
-      business: draft.business || "—",
-      category: draft.category,
-      stage: firstStage as Lead["stage"],
-      assignedAgentId: workspaceAgents[0]?.id ?? "",
-      tags: [],
-      estimatedValue: Number(draft.estimatedValue) || 0,
-      nextFollowUp: "Hoy",
-      lastInteraction: "Recién creada",
-      notes: draft.notes,
-    };
-    setLeads((previous) => [created, ...previous]);
-    setOpenNew(false);
-    setSelectedId(created.id);
-    setDrawerOpen(true);
-    setDraft({
-      name: "",
-      phone: "",
-      business: "",
-      source: "WhatsApp",
-      category: "presupuesto",
-      estimatedValue: 0,
-      notes: "",
-    });
-    setToast("Oportunidad creada.");
+    try {
+      const id = await createLeadRecord({
+        name: draft.name || "Oportunidad sin nombre",
+        phone: draft.phone || "—",
+        source: draft.source,
+        business: draft.business || "—",
+        category: draft.category,
+        stage: firstStage as Lead["stage"],
+        assignedAgentId: currentUserId || workspaceAgents[0]?.id || "",
+        estimatedValue: Number(draft.estimatedValue) || 0,
+        notes: draft.notes,
+      });
+      setOpenNew(false);
+      setSelectedId(id);
+      setDrawerOpen(true);
+      setDraft({
+        name: "",
+        phone: "",
+        business: "",
+        source: "WhatsApp",
+        category: "presupuesto",
+        estimatedValue: 0,
+        notes: "",
+      });
+      setToast("Oportunidad creada.");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "No se pudo crear la oportunidad.");
+    }
   };
 
   const openDetail = (id: string) => {
