@@ -308,6 +308,26 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     const conversation = conversations.find((item) => item.id === conversationId);
     if (!conversation || !body.trim()) return;
 
+    const { data: whatsappAccount } = await supabase
+      .from("whatsapp_accounts")
+      .select("status")
+      .eq("workspace_id", conversation.workspaceId)
+      .maybeSingle();
+
+    if (whatsappAccount?.status === "connected") {
+      const { error: functionError } = await supabase.functions.invoke("whatsapp-send", {
+        body: {
+          workspace_id: conversation.workspaceId,
+          conversation_id: conversation.id,
+          text: body.trim(),
+        },
+      });
+
+      if (functionError) throw new Error(functionError.message || "No se pudo enviar el mensaje por WhatsApp.");
+      await refresh();
+      return;
+    }
+
     const now = new Date().toISOString();
     const { error: messageError } = await supabase.from("messages").insert({
       workspace_id: conversation.workspaceId,
