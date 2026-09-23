@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { Loader2, LockKeyhole, MessageCircleMore } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-export function LoginForm() {
+export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
   const supabase = createClient();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [fullName, setFullName] = useState("");
@@ -25,7 +25,7 @@ export function LoginForm() {
         setLoading(false);
         return;
       }
-      window.location.assign("/dashboard");
+      window.location.assign(nextPath);
       return;
     }
 
@@ -34,7 +34,7 @@ export function LoginForm() {
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath === "/dashboard" ? "/onboarding" : nextPath)}`,
       },
     });
 
@@ -45,7 +45,7 @@ export function LoginForm() {
     }
 
     if (data.session) {
-      window.location.assign("/onboarding");
+      window.location.assign(nextPath === "/dashboard" ? "/onboarding" : nextPath);
       return;
     }
 
