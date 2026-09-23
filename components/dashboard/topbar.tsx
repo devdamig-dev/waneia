@@ -1,10 +1,10 @@
 "use client";
 
-import { Command, Search } from "lucide-react";
+import { Command, LogOut, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { workspaces } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { NotificationsBell } from "@/components/dashboard/notifications-bell";
+import { createClient } from "@/lib/supabase/client";
 
 const navItems = [
   { href: "/dashboard", label: "Inicio" },
@@ -18,10 +18,20 @@ const navItems = [
   { href: "/dashboard/configuracion", label: "Configuración" },
 ];
 
+function initials(name: string) {
+  return name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "WA";
+}
+
 export function Topbar() {
-  const { activeWorkspaceId, setActiveWorkspaceId } = useWorkspace();
+  const { workspaces, activeWorkspaceId, setActiveWorkspaceId, currentUserName, currentUserEmail } = useWorkspace();
   const pathname = usePathname();
-  const current = navItems.find((n) => pathname === n.href || (n.href !== "/dashboard" && pathname.startsWith(n.href)));
+  const current = navItems.find((item) => pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href)));
+
+  async function signOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.assign("/login");
+  }
 
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur">
@@ -49,7 +59,15 @@ export function Topbar() {
           ))}
         </select>
         <NotificationsBell />
-        <div className="rounded-xl border border-cyan-300/30 bg-cyan-400/20 px-3 py-2 text-sm font-semibold" title="Camila Romero">CR</div>
+        <div
+          className="rounded-xl border border-cyan-300/30 bg-cyan-400/20 px-3 py-2 text-sm font-semibold"
+          title={currentUserEmail || currentUserName}
+        >
+          {initials(currentUserName)}
+        </div>
+        <button onClick={signOut} className="rounded-xl border border-white/10 bg-white/5 p-2 text-zinc-400 hover:bg-white/10 hover:text-white" title="Cerrar sesión">
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
 
       <nav className="order-last flex w-full gap-1 overflow-x-auto pt-2 text-xs lg:hidden">
