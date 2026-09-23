@@ -19,8 +19,6 @@ import {
   UsersRound,
   WandSparkles,
 } from "lucide-react";
-import { contacts } from "@/data/mock-data";
-import { teamMembers } from "@/data/saas-data";
 import { useConfigurableTemplates, useDepartments, usePipelines } from "@/lib/workspace-config";
 import { useCRMStore } from "@/lib/crm-store";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
@@ -65,13 +63,15 @@ function isClosed(status: ConversationStatus) {
 }
 
 export function ConversationsClient() {
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, teamMembers, currentUserId } = useWorkspace();
   const {
+    contacts,
     conversations,
-    setConversations,
     leads,
-    setLeads,
+    updateConversation: persistConversation,
+    sendMessage,
     createLeadFromConversation,
+    updateLead: persistLead,
   } = useCRMStore();
   const { departments } = useDepartments();
   const { pipelines, defaultPipelineId } = usePipelines();
@@ -93,9 +93,9 @@ export function ConversationsClient() {
   );
   const workspaceAgents = useMemo(
     () => teamMembers.filter((member) => member.workspaceId === activeWorkspaceId && member.status === "active"),
-    [activeWorkspaceId],
+    [activeWorkspaceId, teamMembers],
   );
-  const currentAgentId = workspaceAgents[0]?.id ?? "";
+  const currentAgentId = currentUserId || workspaceAgents[0]?.id || "";
 
   const conversationDepartment = useMemo(() => {
     const map: Record<string, string> = {};
@@ -153,7 +153,7 @@ export function ConversationsClient() {
   );
   const selectedContact = useMemo(
     () => (selected ? contacts.find((contact) => contact.id === selected.contactId) : undefined),
-    [selected],
+    [selected, contacts],
   );
   const selectedLead = useMemo(() => {
     if (!selected) return undefined;
@@ -177,12 +177,8 @@ export function ConversationsClient() {
   );
 
   const updateConversation = (id: string, patch: Partial<Conversation>) => {
-    setConversations((previous) =>
-      previous.map((conversation) =>
-        conversation.id === id
-          ? { ...conversation, ...patch, updatedAt: new Date().toISOString() }
-          : conversation,
-      ),
+    void persistConversation(id, patch).catch((err) =>
+      setToast(err instanceof Error ? err.message : "No se pudo actualizar la conversación."),
     );
   };
 
@@ -199,38 +195,17 @@ export function ConversationsClient() {
     setToast(status === "cerrado" ? "Conversación resuelta." : `Conversación movida a ${status}.`);
   };
 
-  const sendReply = () => {
+  const sendReply = async () => {
     if (!selected || !reply.trim()) return;
-    const now = new Date();
-    const stamp = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
-    const agent = workspaceAgents.find((item) => item.id === selected.assignedAgentId) ?? workspaceAgents[0];
-
-    setConversations((previous) =>
-      previous.map((conversation) =>
-        conversation.id === selected.id
-          ? {
-              ...conversation,
-              assignedAgentId: conversation.assignedAgentId ?? agent?.id ?? null,
-              status: conversation.status === "nuevo" ? "en curso" : conversation.status,
-              messages: [
-                ...conversation.messages,
-                {
-                  id: `m-${Date.now()}`,
-                  sender: "agent" as const,
-                  agentName: agent?.name ?? "Equipo",
-                  content: reply.trim(),
-                  timestamp: stamp,
-                },
-              ],
-              lastMessage: reply.trim(),
-              updatedAt: now.toISOString(),
-              slaMinutesRemaining: Math.max(conversation.slaMinutesRemaining, 30),
-            }
-          : conversation,
-      ),
-    );
+    const body = reply.trim();
     setReply("");
-    setToast("Mensaje enviado.");
+    try {
+      await sendMessage(selected.id, body);
+      setToast("Mensaje guardado en el Inbox.");
+    } catch (err) {
+      setReply(body);
+      setToast(err instanceof Error ? err.message : "No se pudo enviar el mensaje.");
+    }
   };
 
   const addTag = (tag: string) => {
@@ -248,16 +223,20 @@ export function ConversationsClient() {
     setToast("Nota guardada.");
   };
 
-  const createOpportunity = () => {
+  const createOpportunity = async () => {
     if (!selected) return;
-    const id = createLeadFromConversation(selected);
-    setToast(`Oportunidad creada y vinculada (${id}).`);
+    try {
+      await createLeadFromConversation(selected);
+      setToast("Oportunidad creada y vinculada en Ventas.");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "No se pudo crear la oportunidad.");
+    }
   };
 
   const updateLead = (patch: Partial<NonNullable<typeof selectedLead>>) => {
     if (!selectedLead) return;
-    setLeads((previous) =>
-      previous.map((lead) => (lead.id === selectedLead.id ? { ...lead, ...patch } : lead)),
+    void persistLead(selectedLead.id, patch).catch((err) =>
+      setToast(err instanceof Error ? err.message : "No se pudo actualizar la oportunidad."),
     );
   };
 
