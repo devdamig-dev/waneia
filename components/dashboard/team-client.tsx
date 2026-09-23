@@ -1,153 +1,290 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Mail, UserPlus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Copy, Mail, Trash2, UserPlus, UsersRound } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast } from "@/components/ui/toast";
-import { teamMembers as seedMembers } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
-import { AgentAvailability, TeamMember, UserRole } from "@/types/team";
+import { createClient } from "@/lib/supabase/client";
+import type { UserRole } from "@/types/team";
+
+type InviteRole = "admin" | "supervisor" | "agent";
+type PendingInvite = {
+  id: string;
+  email: string;
+  role: string;
+  expires_at: string;
+  created_at: string;
+};
 
 const roleStyles: Record<UserRole, string> = {
-  owner: "border-violet-300/40 bg-violet-500/10 text-violet-100",
-  admin: "border-cyan-300/40 bg-cyan-500/10 text-cyan-100",
-  operator: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100",
-  viewer: "border-zinc-300/40 bg-zinc-500/10 text-zinc-200",
+  owner: "border-violet-300/30 bg-violet-500/10 text-violet-100",
+  admin: "border-cyan-300/30 bg-cyan-500/10 text-cyan-100",
+  operator: "border-emerald-300/30 bg-emerald-500/10 text-emerald-100",
+  viewer: "border-zinc-300/30 bg-zinc-500/10 text-zinc-200",
 };
 
-const availabilityStyles: Record<AgentAvailability, string> = {
-  online: "bg-emerald-400",
-  ocupado: "bg-amber-400",
-  ausente: "bg-rose-400",
-  offline: "bg-zinc-500",
-};
+function backendRole(role: UserRole) {
+  if (role === "owner") return "owner";
+  if (role === "admin") return "admin";
+  return "agent";
+}
 
 export function TeamClient() {
-  const { activeWorkspaceId } = useWorkspace();
-  const [members, setMembers] = useState<TeamMember[]>(seedMembers);
+  const {
+    activeWorkspaceId,
+    teamMembers,
+    currentUserId,
+    refreshWorkspaces,
+  } = useWorkspace();
+  const supabase = useMemo(() => createClient(), []);
+
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<UserRole>("operator");
+  const [inviteRole, setInviteRole] = useState<InviteRole>("agent");
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [lastInviteLink, setLastInviteLink] = useState("");
   const [toast, setToast] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const workspaceMembers = useMemo(
-    () => members.filter((m) => m.workspaceId === activeWorkspaceId),
-    [members, activeWorkspaceId],
+    () => teamMembers.filter((member) => member.workspaceId === activeWorkspaceId),
+    [teamMembers, activeWorkspaceId],
   );
 
-  const totalAssigned = workspaceMembers.reduce((acc, m) => acc + m.assignedConversations, 0);
-  const totalResolved = workspaceMembers.reduce((acc, m) => acc + m.resolvedToday, 0);
-  const onlineCount = workspaceMembers.filter((m) => m.availability === "online").length;
+  const currentMember = workspaceMembers.find((member) => member.userId === currentUserId);
+  const canManage = currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const invite = () => {
-    if (!inviteEmail.includes("@")) {
+  const loadInvites = async () => {
+    if (!activeWorkspaceId || !canManage) {
+      setPendingInvites([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("workspace_invites")
+      .select("id,email,role,expires_at,created_at")
+      .eq("workspace_id", activeWorkspaceId)
+      .is("accepted_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+    setPendingInvites(data ?? []);
+  };
+
+  useEffect(() => {
+    void loadInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId, canManage]);
+
+  const createInvite = async () => {
+    if (!canManage || !activeWorkspaceId || !currentUserId) return;
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email.includes("@")) {
       setToast("Ingresá un email válido.");
       return;
     }
-    const created: TeamMember = {
-      id: `tm-${Date.now()}`,
-      workspaceId: activeWorkspaceId,
-      userId: `u-${Date.now()}`,
-      name: inviteEmail.split("@")[0],
-      email: inviteEmail,
-      role: inviteRole,
-      status: "invited",
-      availability: "offline",
-      assignedConversations: 0,
-      resolvedToday: 0,
-      responseTimeMinutes: 0,
-      lastSeen: "Invitación pendiente",
-    };
-    setMembers((prev) => [created, ...prev]);
+
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("workspace_invites")
+      .insert({
+        workspace_id: activeWorkspaceId,
+        email,
+        role: inviteRole,
+        invited_by: currentUserId,
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      setToast(error?.message || "No se pudo generar la invitación.");
+      setSaving(false);
+      return;
+    }
+
+    const link = `${window.location.origin}/join/${data.id}`;
+    setLastInviteLink(link);
     setInviteEmail("");
-    setToast("Invitación enviada (mock).");
+    setToast("Invitación creada. Copiá el link y envialo al integrante.");
+    await loadInvites();
+    setSaving(false);
   };
 
-  const setAvailability = (id: string, value: AgentAvailability) =>
-    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, availability: value } : m)));
+  const copyLink = async (id?: string) => {
+    const link = id ? `${window.location.origin}/join/${id}` : lastInviteLink;
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setToast("Link de invitación copiado.");
+    } catch {
+      setToast("No se pudo copiar automáticamente.");
+    }
+  };
 
-  const setRole = (id: string, role: UserRole) =>
-    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, role } : m)));
+  const cancelInvite = async (id: string) => {
+    const { error } = await supabase.from("workspace_invites").delete().eq("id", id);
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+    await loadInvites();
+    setToast("Invitación cancelada.");
+  };
 
-  const remove = (id: string) => setMembers((prev) => prev.filter((m) => m.id !== id));
+  const changeRole = async (userId: string, role: UserRole) => {
+    if (!canManage || userId === currentUserId) return;
+    const { error } = await supabase
+      .from("workspace_members")
+      .update({ role: backendRole(role) })
+      .eq("workspace_id", activeWorkspaceId)
+      .eq("user_id", userId);
+
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+    await refreshWorkspaces();
+    setToast("Rol actualizado.");
+  };
+
+  const removeMember = async (userId: string) => {
+    if (!canManage || userId === currentUserId) return;
+    const { error } = await supabase
+      .from("workspace_members")
+      .delete()
+      .eq("workspace_id", activeWorkspaceId)
+      .eq("user_id", userId);
+
+    if (error) {
+      setToast(error.message);
+      return;
+    }
+    await refreshWorkspaces();
+    setToast("Integrante quitado del workspace.");
+  };
 
   return (
     <>
-      <div className="grid gap-3 md:grid-cols-4">
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Miembros</p><p className="mt-1 text-2xl font-bold">{workspaceMembers.length}</p></Card>
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Online ahora</p><p className="mt-1 text-2xl font-bold text-emerald-100">{onlineCount}</p></Card>
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Conversaciones asignadas</p><p className="mt-1 text-2xl font-bold text-cyan-100">{totalAssigned}</p></Card>
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-zinc-400">Resueltas hoy</p><p className="mt-1 text-2xl font-bold text-violet-100">{totalResolved}</p></Card>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-zinc-500">Integrantes</p>
+          <p className="mt-2 text-2xl font-bold">{workspaceMembers.length}</p>
+          <p className="mt-1 text-xs text-zinc-500">usuarios con acceso</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-zinc-500">Invitaciones</p>
+          <p className="mt-2 text-2xl font-bold text-cyan-100">{pendingInvites.length}</p>
+          <p className="mt-1 text-xs text-zinc-500">links pendientes</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-zinc-500">Tu rol</p>
+          <p className="mt-2 text-xl font-bold capitalize">{currentMember?.role ?? "—"}</p>
+          <p className="mt-1 text-xs text-zinc-500">{canManage ? "podés administrar equipo" : "acceso operativo"}</p>
+        </Card>
       </div>
 
-      <Card className="mt-4 p-4">
-        <p className="text-sm font-semibold inline-flex items-center gap-2"><UserPlus className="h-4 w-4 text-emerald-300" />Invitar miembro</p>
-        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px_160px]">
-          <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="email@empresa.com" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm" />
-          <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as UserRole)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm">
-            <option value="owner" className="bg-[#0b1023]">owner</option>
-            <option value="admin" className="bg-[#0b1023]">admin</option>
-            <option value="operator" className="bg-[#0b1023]">operator</option>
-            <option value="viewer" className="bg-[#0b1023]">viewer</option>
-          </select>
-          <Button onClick={invite} className="bg-emerald-500/30 hover:bg-emerald-500/40"><Mail className="mr-1 h-4 w-4" />Enviar invitación</Button>
+      {canManage ? (
+        <Card className="mt-4 p-4">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold">
+            <UserPlus className="h-4 w-4 text-emerald-300" />
+            Invitar al equipo
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">El link dura 7 días y sólo funciona con el email indicado.</p>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_180px_170px]">
+            <input
+              value={inviteEmail}
+              onChange={(event) => setInviteEmail(event.target.value)}
+              placeholder="vendedor@empresa.com"
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            />
+            <select
+              value={inviteRole}
+              onChange={(event) => setInviteRole(event.target.value as InviteRole)}
+              className="rounded-xl border border-white/10 bg-[#0b1023] px-3 py-2 text-sm"
+            >
+              <option value="agent">Vendedor / operador</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="admin">Administrador</option>
+            </select>
+            <Button onClick={createInvite} disabled={saving} className="bg-emerald-500/30 hover:bg-emerald-500/40">
+              <Mail className="mr-1 h-4 w-4" />
+              Generar invitación
+            </Button>
+          </div>
+
+          {lastInviteLink ? (
+            <div className="mt-3 flex gap-2 rounded-xl border border-emerald-300/20 bg-emerald-500/5 p-3">
+              <input readOnly value={lastInviteLink} className="min-w-0 flex-1 bg-transparent font-mono text-xs text-emerald-100 outline-none" />
+              <Button onClick={() => void copyLink()}><Copy className="h-4 w-4" /></Button>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Card className="mt-4 overflow-hidden p-0">
+        <div className="border-b border-white/10 px-4 py-3">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold">
+            <UsersRound className="h-4 w-4 text-cyan-200" />
+            Equipo actual
+          </p>
+        </div>
+
+        <div className="divide-y divide-white/5">
+          {workspaceMembers.map((member) => (
+            <div key={member.userId} className="grid gap-3 px-4 py-3 md:grid-cols-[1.4fr_180px_120px] md:items-center">
+              <div>
+                <p className="text-sm font-medium">{member.name}</p>
+                <p className="text-[11px] text-zinc-500">{member.email}{member.userId === currentUserId ? " · vos" : ""}</p>
+              </div>
+
+              {member.role === "owner" || !canManage || member.userId === currentUserId ? (
+                <span className={`w-fit rounded-full border px-2 py-1 text-[11px] ${roleStyles[member.role]}`}>{member.role}</span>
+              ) : (
+                <select
+                  value={member.role}
+                  onChange={(event) => void changeRole(member.userId, event.target.value as UserRole)}
+                  className="rounded-xl border border-white/10 bg-[#0b1023] px-3 py-2 text-xs"
+                >
+                  <option value="operator">Vendedor / operador</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              )}
+
+              {canManage && member.userId !== currentUserId && member.role !== "owner" ? (
+                <button onClick={() => void removeMember(member.userId)} className="inline-flex items-center justify-center gap-1 text-xs text-rose-200 hover:text-rose-100">
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Quitar
+                </button>
+              ) : null}
+            </div>
+          ))}
         </div>
       </Card>
 
-      <Card className="mt-4 overflow-x-auto p-0">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/10 text-left text-xs text-zinc-400">
-              <th className="p-3">Miembro</th>
-              <th className="p-3">Rol</th>
-              <th className="p-3">Disponibilidad</th>
-              <th className="p-3">Carga</th>
-              <th className="p-3">Resueltas hoy</th>
-              <th className="p-3">Tiempo respuesta</th>
-              <th className="p-3">Última actividad</th>
-              <th className="p-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {workspaceMembers.map((m) => (
-              <tr key={m.id} className="hover:bg-white/5">
-                <td className="p-3"><p className="font-medium">{m.name}</p><p className="text-[11px] text-zinc-500">{m.email}</p></td>
-                <td className="p-3">
-                  <select value={m.role} onChange={(e) => setRole(m.id, e.target.value as UserRole)} className={`rounded-full border px-2 py-0.5 text-[11px] ${roleStyles[m.role]}`}>
-                    <option value="owner" className="bg-[#0b1023]">owner</option>
-                    <option value="admin" className="bg-[#0b1023]">admin</option>
-                    <option value="operator" className="bg-[#0b1023]">operator</option>
-                    <option value="viewer" className="bg-[#0b1023]">viewer</option>
-                  </select>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${availabilityStyles[m.availability]}`} />
-                    <select value={m.availability} onChange={(e) => setAvailability(m.id, e.target.value as AgentAvailability)} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px]">
-                      <option value="online" className="bg-[#0b1023]">online</option>
-                      <option value="ocupado" className="bg-[#0b1023]">ocupado</option>
-                      <option value="ausente" className="bg-[#0b1023]">ausente</option>
-                      <option value="offline" className="bg-[#0b1023]">offline</option>
-                    </select>
-                  </div>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 w-24 rounded-full bg-white/10">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" style={{ width: `${Math.min(m.assignedConversations * 10, 100)}%` }} />
-                    </div>
-                    <span className="text-[11px] text-zinc-300">{m.assignedConversations}</span>
-                  </div>
-                </td>
-                <td className="p-3 text-zinc-300">{m.resolvedToday}</td>
-                <td className="p-3 text-zinc-300">{m.responseTimeMinutes ? `${m.responseTimeMinutes}m` : "—"}</td>
-                <td className="p-3 text-zinc-300">{m.lastSeen}</td>
-                <td className="p-3 text-right"><button onClick={() => remove(m.id)} className="text-xs text-rose-200 hover:text-rose-100">Quitar</button></td>
-              </tr>
+      {canManage && pendingInvites.length > 0 ? (
+        <Card className="mt-4 p-4">
+          <p className="text-sm font-semibold">Invitaciones pendientes</p>
+          <div className="mt-3 space-y-2">
+            {pendingInvites.map((invite) => (
+              <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                <div>
+                  <p className="text-sm font-medium">{invite.email}</p>
+                  <p className="text-[11px] text-zinc-500">Rol {invite.role} · vence {new Date(invite.expires_at).toLocaleDateString("es-AR")}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={() => void copyLink(invite.id)}><Copy className="h-4 w-4" /></Button>
+                  <Button onClick={() => void cancelInvite(invite.id)}><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </Card>
+          </div>
+        </Card>
+      ) : null}
 
       <Toast message={toast} onClose={() => setToast("")} />
     </>
