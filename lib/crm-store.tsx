@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import type { Contact, Conversation, ConversationStatus, Lead, Message } from "@/types/entities";
+import type { TablesUpdate } from "@/types/database";
 
 type ContactDraft = {
   name: string;
@@ -264,7 +265,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [activeWorkspaceId, refresh, supabase]);
 
   const updateContact = useCallback(async (id: string, patch: Partial<Contact>) => {
-    const dbPatch: Record<string, unknown> = {};
+    const dbPatch: TablesUpdate<"contacts"> = {};
     if (patch.name !== undefined) dbPatch.name = patch.name;
     if (patch.phone !== undefined) dbPatch.phone = patch.phone;
     if (patch.email !== undefined) dbPatch.email = patch.email || null;
@@ -283,7 +284,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   const updateConversation = useCallback(async (id: string, patch: Partial<Conversation>) => {
-    const dbPatch: Record<string, unknown> = {};
+    const dbPatch: TablesUpdate<"conversations"> = {};
     if (patch.status !== undefined) dbPatch.status = patch.status;
     if (patch.category !== undefined) dbPatch.category = patch.category;
     if (patch.priority !== undefined) dbPatch.priority = patch.priority;
@@ -416,7 +417,7 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   }, [activeWorkspaceId, contacts, createContact, currentUserId, refresh, supabase]);
 
   const updateLead = useCallback(async (id: string, patch: Partial<Lead>) => {
-    const dbPatch: Record<string, unknown> = {};
+    const dbPatch: TablesUpdate<"opportunities"> = {};
     if (patch.name !== undefined) dbPatch.name = patch.name;
     if (patch.source !== undefined) dbPatch.source = patch.source;
     if (patch.business !== undefined) dbPatch.business = patch.business || null;
