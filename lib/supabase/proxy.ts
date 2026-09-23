@@ -26,6 +26,7 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     pathname === "/login" ||
     pathname.startsWith("/auth/") ||
+    pathname.startsWith("/join/") ||
     pathname.startsWith("/api/whatsapp/webhook");
 
   if (!claims && !isPublic) {
