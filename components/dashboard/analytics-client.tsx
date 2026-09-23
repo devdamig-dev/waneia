@@ -8,7 +8,6 @@ import {
   UserRoundCheck,
   UsersRound,
 } from "lucide-react";
-import { teamMembers } from "@/data/saas-data";
 import { useCRMStore } from "@/lib/crm-store";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Card } from "@/components/ui/card";
@@ -26,7 +25,7 @@ const stageLabels: Record<string, string> = {
 };
 
 export function AnalyticsClient() {
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, teamMembers } = useWorkspace();
   const { contacts, conversations, leads } = useCRMStore();
 
   const wsContacts = contacts.filter((contact) => contact.workspaceId === activeWorkspaceId);
