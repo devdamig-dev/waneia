@@ -6,12 +6,14 @@ import { CommandPalette } from "@/components/dashboard/command-palette";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
 import { WorkspaceConfigProvider } from "@/lib/workspace-config";
 import { NotificationsProvider } from "@/lib/notifications";
+import { CRMProvider } from "@/lib/crm-store";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <WorkspaceProvider>
       <WorkspaceConfigProvider>
-        <NotificationsProvider>
+        <CRMProvider>
+          <NotificationsProvider>
           <div className="flex min-h-screen bg-transparent">
             <Sidebar />
             <main className="flex-1 p-4 lg:p-8">
@@ -20,7 +22,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             </main>
             <CommandPalette />
           </div>
-        </NotificationsProvider>
+          </NotificationsProvider>
+        </CRMProvider>
       </WorkspaceConfigProvider>
     </WorkspaceProvider>
   );

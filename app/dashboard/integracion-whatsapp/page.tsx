@@ -3,8 +3,10 @@ import { WhatsappConnectionClient } from "@/components/dashboard/whatsapp-connec
 export default function IntegracionWhatsappPage() {
   return (
     <section className="space-y-4">
-      <h2 className="text-2xl font-bold">Integración WhatsApp</h2>
-      <p className="text-zinc-400">Preparación enterprise para conexión oficial de WhatsApp Business API.</p>
+      <div>
+        <h2 className="text-2xl font-bold">WhatsApp</h2>
+        <p className="mt-1 text-sm text-zinc-400">Conectá un número oficial de Meta Cloud API para recibir y responder conversaciones reales.</p>
+      </div>
       <WhatsappConnectionClient />
     </section>
   );

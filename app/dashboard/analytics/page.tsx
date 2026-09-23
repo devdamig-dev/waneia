@@ -3,8 +3,10 @@ import { AnalyticsClient } from "@/components/dashboard/analytics-client";
 export default function AnalyticsPage() {
   return (
     <section className="space-y-4">
-      <h2 className="text-2xl font-bold">Analytics</h2>
-      <p className="text-zinc-400">Métricas de valor comercial y performance operativa del workspace.</p>
+      <div>
+        <h2 className="text-2xl font-bold">Reportes</h2>
+        <p className="mt-1 text-sm text-zinc-400">Ventas, atención y rendimiento del equipo en una lectura simple.</p>
+      </div>
       <AnalyticsClient />
     </section>
   );

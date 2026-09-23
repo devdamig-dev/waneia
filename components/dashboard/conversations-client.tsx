@@ -1,695 +1,643 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
-  AlertTriangle,
-  Bot,
   CalendarClock,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Clock3,
-  ExternalLink,
-  Flame,
-  Mic,
+  Filter,
+  MessageCircleMore,
   Paperclip,
+  Search,
   Send,
-  Smile,
   Sparkles,
   StickyNote,
-  Tag as TagIcon,
-  TimerReset,
-  User,
-  UserPlus,
-  Wand,
-  XCircle,
+  Tag,
+  UserRound,
+  UsersRound,
+  WandSparkles,
 } from "lucide-react";
-import { contacts, conversations as seedConversations, leads } from "@/data/mock-data";
-import { teamMembers } from "@/data/saas-data";
-import { useConfigurableTemplates, useDepartments } from "@/lib/workspace-config";
-import { CategoryBadge } from "@/components/dashboard/category-badge";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { useConfigurableTemplates, useDepartments, usePipelines } from "@/lib/workspace-config";
+import { useCRMStore } from "@/lib/crm-store";
+import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Toast } from "@/components/ui/toast";
-import {
-  ActivityEvent,
-  Conversation,
-  ConversationCategory,
-  ConversationPriority,
-  ConversationStatus,
-} from "@/types/entities";
-import { useWorkspace } from "@/components/dashboard/workspace-context";
+import { Conversation, ConversationStatus } from "@/types/entities";
 
-const queues: Array<{ value: ConversationStatus | "todas" | "sla"; label: string; tone: string }> = [
-  { value: "todas", label: "Todas", tone: "border-white/15 bg-white/5 text-zinc-200" },
-  { value: "sla", label: "Urgentes", tone: "border-rose-300/40 bg-rose-500/10 text-rose-100" },
-  { value: "nuevo", label: "Nuevos", tone: "border-cyan-300/40 bg-cyan-500/10 text-cyan-100" },
-  { value: "en curso", label: "En curso", tone: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" },
-  { value: "pendiente", label: "Pendientes", tone: "border-violet-300/40 bg-violet-500/10 text-violet-100" },
-  { value: "ganado", label: "Ganados", tone: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100" },
-  { value: "perdido", label: "Perdidos", tone: "border-rose-300/40 bg-rose-500/10 text-rose-100" },
-  { value: "cerrado", label: "Cerrados", tone: "border-zinc-300/40 bg-zinc-500/10 text-zinc-200" },
+type InboxQueue = "todas" | "sin-asignar" | "mias" | "seguimientos" | "urgentes";
+
+const queueOptions: Array<{ value: InboxQueue; label: string }> = [
+  { value: "todas", label: "Todas" },
+  { value: "sin-asignar", label: "Sin asignar" },
+  { value: "mias", label: "Mías" },
+  { value: "seguimientos", label: "Seguimientos" },
+  { value: "urgentes", label: "Urgentes" },
 ];
 
-const priorityChip: Record<ConversationPriority, string> = {
-  alta: "border-rose-300/40 bg-rose-500/10 text-rose-100",
-  media: "border-amber-300/40 bg-amber-500/10 text-amber-100",
-  baja: "border-zinc-300/40 bg-zinc-500/10 text-zinc-200",
-};
+const formatCurrency = (n: number) =>
+  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 
-function formatSla(minutes: number): { text: string; tone: "rose" | "amber" | "emerald" } {
-  if (minutes <= 0) return { text: `SLA vencido ${Math.abs(minutes)}m`, tone: "rose" };
-  if (minutes <= 5) return { text: `SLA en riesgo · ${minutes}m`, tone: "amber" };
-  return { text: `SLA ${minutes}m`, tone: "emerald" };
+function slugifyStage(name: string) {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
 }
 
-const toneText = { rose: "text-rose-200", amber: "text-amber-200", emerald: "text-emerald-200" } as const;
-const toneChip = {
-  rose: "border-rose-300/40 bg-rose-500/10 text-rose-100",
-  amber: "border-amber-300/40 bg-amber-500/10 text-amber-100",
-  emerald: "border-emerald-300/40 bg-emerald-500/10 text-emerald-100",
-} as const;
+function initials(name: string) {
+  return name
+    .split(" ")
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function isClosed(status: ConversationStatus) {
+  return status === "ganado" || status === "perdido" || status === "cerrado";
+}
 
 export function ConversationsClient() {
-  const { activeWorkspaceId } = useWorkspace();
-  const [items, setItems] = useState<Conversation[]>(seedConversations);
-  const [queue, setQueue] = useState<(typeof queues)[number]["value"]>("todas");
-  const [filterCategory, setFilterCategory] = useState<ConversationCategory | "todas">("todas");
-  const [filterAgent, setFilterAgent] = useState<string>("todos");
-  const [filterTag, setFilterTag] = useState<string>("todos");
-  const [filterPriority, setFilterPriority] = useState<ConversationPriority | "todas">("todas");
-  const [filterIntent, setFilterIntent] = useState<string>("todos");
-  const [filterDepartment, setFilterDepartment] = useState<string>("todos");
+  const { activeWorkspaceId, teamMembers, currentUserId } = useWorkspace();
+  const {
+    contacts,
+    conversations,
+    leads,
+    updateConversation: persistConversation,
+    sendMessage,
+    createLeadFromConversation,
+    updateLead: persistLead,
+  } = useCRMStore();
+  const { departments } = useDepartments();
+  const { pipelines, defaultPipelineId } = usePipelines();
+  const { templates } = useConfigurableTemplates();
+
+  const [queue, setQueue] = useState<InboxQueue>("todas");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [departmentFilter, setDepartmentFilter] = useState("todos");
+  const [categoryFilter, setCategoryFilter] = useState("todas");
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedId, setSelectedId] = useState("");
   const [reply, setReply] = useState("");
   const [note, setNote] = useState("");
   const [toast, setToast] = useState("");
-  const { departments } = useDepartments();
-  const conversationDepartment: Record<string, string> = useMemo(() => {
-    // Map by category to default department (first one that includes the category).
-    const map: Record<string, string> = {};
-    items.forEach((c) => {
-      const dept = departments.find((d) => d.categoryIds.some((catId) => catId.includes(c.category.split(" ")[0])));
-      if (dept) map[c.id] = dept.id;
-    });
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, departments]);
 
   const workspaceItems = useMemo(
-    () => items.filter((c) => c.workspaceId === activeWorkspaceId),
-    [items, activeWorkspaceId],
+    () => conversations.filter((item) => item.workspaceId === activeWorkspaceId),
+    [conversations, activeWorkspaceId],
   );
   const workspaceAgents = useMemo(
-    () => teamMembers.filter((m) => m.workspaceId === activeWorkspaceId),
-    [activeWorkspaceId],
+    () => teamMembers.filter((member) => member.workspaceId === activeWorkspaceId && member.status === "active"),
+    [activeWorkspaceId, teamMembers],
   );
-  const { templates: configTemplates } = useConfigurableTemplates();
-  const workspaceTemplates = useMemo(
-    () => configTemplates.filter((t) => t.channel !== "whatsapp" || t.approved),
-    [configTemplates],
-  );
-  const allTags = useMemo(
-    () => Array.from(new Set(workspaceItems.flatMap((c) => c.tags))),
-    [workspaceItems],
-  );
-  const allIntents = useMemo(
-    () => Array.from(new Set(workspaceItems.map((c) => c.intent))),
-    [workspaceItems],
-  );
+  const currentAgentId = currentUserId || workspaceAgents[0]?.id || "";
 
-  const filtered = useMemo(
-    () =>
-      workspaceItems.filter((c) => {
-        if (queue === "sla") {
-          if (c.slaMinutesRemaining > 5) return false;
-          if (c.status === "ganado" || c.status === "perdido" || c.status === "cerrado") return false;
-        } else if (queue !== "todas" && c.status !== queue) return false;
-        if (filterCategory !== "todas" && c.category !== filterCategory) return false;
-        if (filterAgent === "sin-asignar") {
-          if (c.assignedAgentId) return false;
-        } else if (filterAgent !== "todos" && c.assignedAgentId !== filterAgent) return false;
-        if (filterDepartment !== "todos" && conversationDepartment[c.id] !== filterDepartment) return false;
-        if (filterTag !== "todos" && !c.tags.includes(filterTag)) return false;
-        if (filterPriority !== "todas" && c.priority !== filterPriority) return false;
-        if (filterIntent !== "todos" && c.intent !== filterIntent) return false;
-        if (
-          search &&
-          !`${c.customerName} ${c.phone} ${c.lastMessage}`.toLowerCase().includes(search.toLowerCase())
-        )
-          return false;
-        return true;
-      }),
-    [workspaceItems, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, search],
-  );
+  const conversationDepartment = useMemo(() => {
+    const map: Record<string, string> = {};
+    workspaceItems.forEach((conversation) => {
+      const department = departments.find((item) =>
+        item.categoryIds.some((categoryId) => categoryId.includes(conversation.category.split(" ")[0])),
+      );
+      if (department) map[conversation.id] = department.id;
+    });
+    return map;
+  }, [workspaceItems, departments]);
+
+  const counts = useMemo(() => {
+    const active = workspaceItems.filter((item) => !isClosed(item.status));
+    return {
+      todas: workspaceItems.length,
+      "sin-asignar": active.filter((item) => !item.assignedAgentId).length,
+      mias: active.filter((item) => item.assignedAgentId === currentAgentId).length,
+      seguimientos: active.filter((item) => Boolean(item.nextTask)).length,
+      urgentes: active.filter((item) => item.priority === "alta" || item.slaMinutesRemaining <= 5).length,
+    };
+  }, [workspaceItems, currentAgentId]);
+
+  const filtered = useMemo(() => {
+    const result = workspaceItems.filter((conversation) => {
+      if (queue === "sin-asignar" && conversation.assignedAgentId) return false;
+      if (queue === "mias" && conversation.assignedAgentId !== currentAgentId) return false;
+      if (queue === "seguimientos" && (!conversation.nextTask || isClosed(conversation.status))) return false;
+      if (queue === "urgentes" && (isClosed(conversation.status) || (conversation.priority !== "alta" && conversation.slaMinutesRemaining > 5))) return false;
+      if (departmentFilter !== "todos" && conversationDepartment[conversation.id] !== departmentFilter) return false;
+      if (categoryFilter !== "todas" && conversation.category !== categoryFilter) return false;
+      if (search && !`${conversation.customerName} ${conversation.phone} ${conversation.businessName} ${conversation.lastMessage}`.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+
+    return [...result].sort((a, b) => {
+      const aUrgency = isClosed(a.status) ? 10000 : Math.min(a.slaMinutesRemaining, 999);
+      const bUrgency = isClosed(b.status) ? 10000 : Math.min(b.slaMinutesRemaining, 999);
+      return aUrgency - bUrgency;
+    });
+  }, [workspaceItems, queue, currentAgentId, departmentFilter, categoryFilter, search, conversationDepartment]);
 
   useEffect(() => {
-    setSelectedId(filtered[0]?.id ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId, queue, filterCategory, filterAgent, filterTag, filterPriority, filterIntent, search]);
+    const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("id") : null;
+    if (requested && workspaceItems.some((item) => item.id === requested)) {
+      setSelectedId(requested);
+      return;
+    }
+    setSelectedId((current) => (filtered.some((item) => item.id === current) ? current : (filtered[0]?.id ?? "")));
+  }, [activeWorkspaceId, filtered, workspaceItems]);
 
-  useEffect(() => {
-    if (!selectedId && filtered[0]) setSelectedId(filtered[0].id);
-  }, [filtered, selectedId]);
-
-  const selected = useMemo(() => items.find((c) => c.id === selectedId), [items, selectedId]);
+  const selected = useMemo(
+    () => conversations.find((item) => item.id === selectedId),
+    [conversations, selectedId],
+  );
   const selectedContact = useMemo(
-    () => (selected ? contacts.find((c) => c.id === selected.contactId) : undefined),
-    [selected],
-  );
-  const selectedAgent = useMemo(
-    () => (selected ? teamMembers.find((m) => m.id === selected.assignedAgentId) : undefined),
-    [selected],
+    () => (selected ? contacts.find((contact) => contact.id === selected.contactId) : undefined),
+    [selected, contacts],
   );
   const selectedLead = useMemo(() => {
     if (!selected) return undefined;
-    if (selected.linkedLeadId) return leads.find((l) => l.id === selected.linkedLeadId);
-    return leads.find((l) => l.conversationId === selected.id || (l.contactId === selected.contactId && l.workspaceId === selected.workspaceId));
-  }, [selected]);
-
-  const counts = useMemo(() => {
-    const out: Record<string, number> = { todas: workspaceItems.length };
-    out["sla"] = workspaceItems.filter((c) => c.slaMinutesRemaining <= 5 && c.status !== "ganado" && c.status !== "perdido" && c.status !== "cerrado").length;
-    queues.forEach((q) => {
-      if (q.value !== "todas" && q.value !== "sla") {
-        out[q.value] = workspaceItems.filter((c) => c.status === q.value).length;
-      }
-    });
-    return out;
-  }, [workspaceItems]);
-
-  const updateConversation = (id: string, patch: Partial<Conversation>, activity?: ActivityEvent) =>
-    setItems((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? { ...c, ...patch, activity: activity ? [{ ...activity }, ...c.activity] : c.activity }
-          : c,
-      ),
+    if (selected.linkedLeadId) return leads.find((lead) => lead.id === selected.linkedLeadId);
+    return leads.find(
+      (lead) =>
+        lead.workspaceId === selected.workspaceId &&
+        (lead.conversationId === selected.id || lead.contactId === selected.contactId),
     );
+  }, [selected, leads]);
 
-  const sendReply = () => {
-    if (!selected || !reply.trim()) return;
-    const now = new Date();
-    const stamp = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
-    updateConversation(
-      selected.id,
-      {
-        messages: [
-          ...selected.messages,
-          { id: `m-${Date.now()}`, sender: "agent", agentName: selectedAgent?.name ?? "Agente", content: reply, timestamp: stamp },
-        ],
-        status: selected.status === "nuevo" ? "en curso" : selected.status,
-        slaMinutesRemaining: Math.max(selected.slaMinutesRemaining, 30),
-        updatedAt: now.toISOString(),
-      },
-      { id: `ev-${Date.now()}`, type: "ai", label: `Respuesta enviada por ${selectedAgent?.name ?? "Agente"}`, when: `Hoy ${stamp}` },
+  const activePipeline = pipelines.find((pipeline) => pipeline.id === defaultPipelineId) ?? pipelines[0];
+  const stages = useMemo(
+    () => (activePipeline ? [...activePipeline.stages].sort((a, b) => a.order - b.order) : []),
+    [activePipeline],
+  );
+
+  const workspaceTemplates = useMemo(
+    () => templates.filter((template) => template.channel !== "whatsapp" || template.approved).slice(0, 4),
+    [templates],
+  );
+
+  const updateConversation = (id: string, patch: Partial<Conversation>) => {
+    void persistConversation(id, patch).catch((err) =>
+      setToast(err instanceof Error ? err.message : "No se pudo actualizar la conversación."),
     );
-    setReply("");
-    setToast("Respuesta enviada al cliente.");
-  };
-
-  const useSuggested = () => selected && setReply(selected.suggestedReply);
-  const insertTemplate = (id: string) => {
-    const t = workspaceTemplates.find((x) => x.id === id);
-    if (t) setReply(t.body);
   };
 
   const assignAgent = (agentId: string) => {
     if (!selected) return;
-    const agent = workspaceAgents.find((a) => a.id === agentId);
-    updateConversation(
-      selected.id,
-      { assignedAgentId: agentId === "" ? null : agentId },
-      { id: `ev-${Date.now()}`, type: "assignment", label: `Reasignada a ${agent?.name ?? "sin asignar"}`, when: "Ahora" },
-    );
-    setToast(`Conversación asignada a ${agent?.name ?? "sin asignar"}.`);
+    updateConversation(selected.id, { assignedAgentId: agentId || null });
+    const name = workspaceAgents.find((agent) => agent.id === agentId)?.name ?? "Sin asignar";
+    setToast(`Responsable actualizado: ${name}.`);
   };
 
   const changeStatus = (status: ConversationStatus) => {
     if (!selected) return;
-    updateConversation(
-      selected.id,
-      { status },
-      { id: `ev-${Date.now()}`, type: "stage", label: `Movida a ${status}`, when: "Ahora" },
-    );
-    setToast(`Conversación movida a ${status}.`);
+    updateConversation(selected.id, { status });
+    setToast(status === "cerrado" ? "Conversación resuelta." : `Conversación movida a ${status}.`);
+  };
+
+  const sendReply = async () => {
+    if (!selected || !reply.trim()) return;
+    const body = reply.trim();
+    setReply("");
+    try {
+      await sendMessage(selected.id, body);
+      setToast("Mensaje guardado en el Inbox.");
+    } catch (err) {
+      setReply(body);
+      setToast(err instanceof Error ? err.message : "No se pudo enviar el mensaje.");
+    }
   };
 
   const addTag = (tag: string) => {
-    if (!selected || !tag.trim() || selected.tags.includes(tag)) return;
-    updateConversation(
-      selected.id,
-      { tags: [...selected.tags, tag] },
-      { id: `ev-${Date.now()}`, type: "tag", label: `Etiqueta '${tag}' agregada`, when: "Ahora" },
-    );
-    setToast(`Etiqueta '${tag}' agregada.`);
-  };
-
-  const removeTag = (tag: string) => {
-    if (!selected) return;
-    updateConversation(selected.id, { tags: selected.tags.filter((t) => t !== tag) });
+    if (!selected || !tag.trim() || selected.tags.includes(tag.trim())) return;
+    updateConversation(selected.id, { tags: [...selected.tags, tag.trim()] });
   };
 
   const saveNote = () => {
     if (!selected || !note.trim()) return;
-    updateConversation(
-      selected.id,
-      { internalNotes: `${selected.internalNotes}\n· ${note}`.trim() },
-      { id: `ev-${Date.now()}`, type: "note", label: `Nota interna agregada`, when: "Ahora" },
-    );
+    const text = selected.internalNotes
+      ? `${selected.internalNotes}\n· ${note.trim()}`
+      : `· ${note.trim()}`;
+    updateConversation(selected.id, { internalNotes: text });
     setNote("");
-    setToast("Nota interna guardada.");
+    setToast("Nota guardada.");
   };
 
-  const updateNextTask = (text: string) => {
+  const createOpportunity = async () => {
     if (!selected) return;
-    updateConversation(selected.id, { nextTask: text });
+    try {
+      await createLeadFromConversation(selected);
+      setToast("Oportunidad creada y vinculada en Ventas.");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "No se pudo crear la oportunidad.");
+    }
   };
-  const updateNextDue = (date: string) => {
-    if (!selected) return;
-    updateConversation(selected.id, { nextTaskDueDate: date });
+
+  const updateLead = (patch: Partial<NonNullable<typeof selectedLead>>) => {
+    if (!selectedLead) return;
+    void persistLead(selectedLead.id, patch).catch((err) =>
+      setToast(err instanceof Error ? err.message : "No se pudo actualizar la oportunidad."),
+    );
   };
+
+  if (!selected && workspaceItems.length === 0) {
+    return <Card className="p-8 text-center text-sm text-zinc-400">Todavía no hay conversaciones en este negocio.</Card>;
+  }
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-1 rounded-2xl border border-white/10 bg-white/5 p-1 text-xs">
-        <button onClick={() => setFilterDepartment("todos")} className={`rounded-xl px-3 py-1.5 transition ${filterDepartment === "todos" ? "bg-cyan-500/20 text-cyan-100" : "text-zinc-300 hover:bg-white/10"}`}>
-          Todos los departamentos
-          <span className="ml-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">{workspaceItems.length}</span>
-        </button>
-        {departments.filter((d) => d.active !== false).map((d) => {
-          const count = workspaceItems.filter((c) => conversationDepartment[c.id] === d.id).length;
-          const isActive = filterDepartment === d.id;
-          return (
-            <button key={d.id} onClick={() => setFilterDepartment(d.id)} className={`rounded-xl px-3 py-1.5 transition ${isActive ? "bg-cyan-500/20 text-cyan-100" : "text-zinc-300 hover:bg-white/10"}`}>
-              {d.name}
-              <span className="ml-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">{count}</span>
-            </button>
-          );
-        })}
-        <button onClick={() => { setFilterDepartment("todos"); setFilterAgent("sin-asignar"); }} className={`ml-auto rounded-xl px-3 py-1.5 text-xs transition ${filterAgent === "sin-asignar" ? "bg-rose-500/20 text-rose-100" : "text-zinc-300 hover:bg-white/10"}`}>
-          Sin asignar
-          <span className="ml-1 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-300">{workspaceItems.filter((c) => !c.assignedAgentId).length}</span>
-        </button>
-      </div>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-8">
-        {queues.map((q) => (
-          <button
-            key={q.value}
-            onClick={() => setQueue(q.value)}
-            className={`rounded-2xl border px-3 py-2.5 text-left text-xs transition ${
-              queue === q.value ? `${q.tone} ring-1 ring-white/30` : "border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
-            }`}
-          >
-            <p className="text-[11px] uppercase tracking-wide opacity-70">{q.label}</p>
-            <p className="mt-1 text-2xl font-semibold">{counts[q.value] ?? 0}</p>
-          </button>
-        ))}
-      </div>
-
-      <Card className="mt-4 p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar nombre, teléfono o mensaje"
-            className="min-w-56 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
-          />
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as ConversationCategory | "todas")} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="todas" className="bg-[#0b1023]">Todas las categorías</option>
-            <option value="presupuesto" className="bg-[#0b1023]">Presupuesto</option>
-            <option value="pedido" className="bg-[#0b1023]">Pedido</option>
-            <option value="consulta" className="bg-[#0b1023]">Consulta</option>
-            <option value="soporte humano" className="bg-[#0b1023]">Soporte humano</option>
-          </select>
-          <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as ConversationPriority | "todas")} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="todas" className="bg-[#0b1023]">Todas las prioridades</option>
-            <option value="alta" className="bg-[#0b1023]">Prioridad alta</option>
-            <option value="media" className="bg-[#0b1023]">Prioridad media</option>
-            <option value="baja" className="bg-[#0b1023]">Prioridad baja</option>
-          </select>
-          <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="todos" className="bg-[#0b1023]">Todos los operadores</option>
-            <option value="sin-asignar" className="bg-[#0b1023]">Sin asignar</option>
-            {workspaceAgents.map((a) => (
-              <option key={a.id} value={a.id} className="bg-[#0b1023]">{a.name}</option>
-            ))}
-          </select>
-          {departments.length > 0 ? (
-            <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm" aria-label="Departamento">
-              <option value="todos" className="bg-[#0b1023]">Todos los departamentos</option>
-              {departments.filter((d) => d.active !== false).map((d) => (
-                <option key={d.id} value={d.id} className="bg-[#0b1023]">{d.name}</option>
-              ))}
-            </select>
-          ) : null}
-          <select value={filterIntent} onChange={(e) => setFilterIntent(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="todos" className="bg-[#0b1023]">Todos los intents</option>
-            {allIntents.map((t) => (
-              <option key={t} value={t} className="bg-[#0b1023]">{t}</option>
-            ))}
-          </select>
-          <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="todos" className="bg-[#0b1023]">Todas las etiquetas</option>
-            {allTags.map((t) => (
-              <option key={t} value={t} className="bg-[#0b1023]">{t}</option>
-            ))}
-          </select>
-        </div>
-      </Card>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1.4fr]">
+      <div className="space-y-3">
         <Card className="p-3">
-          <div className="space-y-2">
-            {filtered.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-zinc-400">Sin conversaciones para los filtros aplicados.</p>
-            ) : (
-              filtered.map((c) => {
-                const sla = formatSla(c.slaMinutesRemaining);
-                const agent = workspaceAgents.find((a) => a.id === c.assignedAgentId);
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-64 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+              <Search className="h-4 w-4 text-zinc-500" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre, negocio o mensaje"
+                className="w-full bg-transparent text-sm outline-none"
+              />
+            </div>
+            <button
+              onClick={() => setShowFilters((value) => !value)}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/10"
+            >
+              <Filter className="h-4 w-4" />
+              Filtros
+              <ChevronDown className={`h-3.5 w-3.5 transition ${showFilters ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+
+          <div className="mt-3 flex gap-1 overflow-x-auto pb-1">
+            {queueOptions.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setQueue(option.value)}
+                className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs transition ${
+                  queue === option.value ? "bg-cyan-500/20 text-cyan-100" : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                }`}
+              >
+                {option.label}
+                <span className="ml-1.5 rounded-full border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px]">
+                  {counts[option.value]}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {showFilters ? (
+            <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 sm:grid-cols-2">
+              <select
+                value={departmentFilter}
+                onChange={(event) => setDepartmentFilter(event.target.value)}
+                className="rounded-xl border border-white/10 bg-[#0b1023] px-3 py-2 text-sm"
+              >
+                <option value="todos">Todos los equipos</option>
+                {departments.filter((department) => department.active !== false).map((department) => (
+                  <option key={department.id} value={department.id}>{department.name}</option>
+                ))}
+              </select>
+              <select
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                className="rounded-xl border border-white/10 bg-[#0b1023] px-3 py-2 text-sm"
+              >
+                <option value="todas">Todas las categorías</option>
+                <option value="presupuesto">Presupuesto</option>
+                <option value="pedido">Pedido</option>
+                <option value="consulta">Consulta</option>
+                <option value="soporte humano">Soporte humano</option>
+              </select>
+            </div>
+          ) : null}
+        </Card>
+
+        <div className="grid min-h-[680px] gap-3 xl:grid-cols-[320px_minmax(0,1fr)_330px]">
+          <Card className="overflow-hidden p-0">
+            <div className="border-b border-white/10 px-3 py-3">
+              <p className="text-sm font-semibold">Inbox</p>
+              <p className="text-xs text-zinc-500">{filtered.length} conversaciones</p>
+            </div>
+            <div className="max-h-[640px] overflow-y-auto p-2">
+              {filtered.length === 0 ? (
+                <p className="p-6 text-center text-xs text-zinc-500">No hay conversaciones con estos filtros.</p>
+              ) : filtered.map((conversation) => {
+                const agent = workspaceAgents.find((item) => item.id === conversation.assignedAgentId);
+                const urgent = !isClosed(conversation.status) && (conversation.slaMinutesRemaining <= 5 || conversation.priority === "alta");
                 return (
                   <button
-                    key={c.id}
-                    onClick={() => setSelectedId(c.id)}
-                    className={`w-full rounded-xl border p-3 text-left transition ${
-                      selected?.id === c.id ? "border-cyan-300/40 bg-cyan-500/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                    key={conversation.id}
+                    onClick={() => setSelectedId(conversation.id)}
+                    className={`mb-1 w-full rounded-xl border p-3 text-left transition ${
+                      selected?.id === conversation.id
+                        ? "border-cyan-300/40 bg-cyan-500/10"
+                        : "border-transparent hover:border-white/10 hover:bg-white/5"
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{c.customerName}</p>
-                        <p className="truncate text-[11px] text-zinc-400">{c.phone} · {agent?.name ?? "Sin asignar"}</p>
+                    <div className="flex items-start gap-2.5">
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-xs font-semibold">
+                        {initials(conversation.customerName)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-sm font-semibold">{conversation.customerName}</p>
+                          {urgent ? <span className="h-2 w-2 shrink-0 rounded-full bg-rose-400" title="Urgente" /> : null}
+                        </div>
+                        <p className="truncate text-[11px] text-zinc-500">
+                          {conversation.businessName} · {agent?.name ?? "Sin asignar"}
+                        </p>
+                        <p className="mt-1.5 line-clamp-2 text-xs text-zinc-300">{conversation.lastMessage}</p>
+                        <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
+                          <span className={urgent ? "text-rose-200" : "text-zinc-500"}>
+                            {isClosed(conversation.status)
+                              ? conversation.status
+                              : conversation.slaMinutesRemaining <= 0
+                                ? `Vencido ${Math.abs(conversation.slaMinutesRemaining)}m`
+                                : `${conversation.slaMinutesRemaining}m SLA`}
+                          </span>
+                          <span className="truncate text-zinc-500">{conversation.category}</span>
+                        </div>
                       </div>
-                      <span className={`shrink-0 text-[11px] ${toneText[sla.tone]}`}>{sla.text}</span>
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs text-zinc-300">{c.lastMessage}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <CategoryBadge category={c.category} />
-                      <StatusBadge status={c.status} />
-                      <span className={`rounded-full border px-2 py-0.5 ${priorityChip[c.priority]}`}>Prio {c.priority}</span>
-                      <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">Puntaje {c.leadScore}</span>
                     </div>
                   </button>
                 );
-              })
-            )}
-          </div>
-        </Card>
+              })}
+            </div>
+          </Card>
 
-        {selected ? (
-          <div className="space-y-4">
-            <Card className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-zinc-400">Conversación</p>
-                  <h3 className="text-xl font-semibold">{selected.customerName}</h3>
-                  <p className="text-sm text-zinc-400">{selected.phone} · {selected.businessName}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className={`relative rounded-full border px-2 py-1 ${toneChip[formatSla(selected.slaMinutesRemaining).tone]}`}>
-                    {formatSla(selected.slaMinutesRemaining).tone === "rose" ? <span className="absolute -left-0.5 -top-0.5 inline-flex h-2 w-2 animate-ping rounded-full bg-rose-400" aria-hidden /> : null}
-                    <TimerReset className="mr-1 inline h-3.5 w-3.5" />{formatSla(selected.slaMinutesRemaining).text}
+          {selected ? (
+            <Card className="flex min-h-[680px] min-w-0 flex-col overflow-hidden p-0">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-500/10 text-sm font-semibold text-cyan-100">
+                    {initials(selected.customerName)}
                   </span>
-                  <span className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2 py-1 text-cyan-100"><Flame className="mr-1 inline h-3.5 w-3.5" />Puntaje {selected.leadScore}</span>
-                  <CategoryBadge category={selected.category} />
-                  <StatusBadge status={selected.status} />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{selected.customerName}</p>
+                    <p className="truncate text-xs text-zinc-500">{selected.phone} · {selected.businessName}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selected.status}
+                    onChange={(event) => changeStatus(event.target.value as ConversationStatus)}
+                    className="rounded-xl border border-white/10 bg-[#0b1023] px-2 py-1.5 text-xs"
+                  >
+                    <option value="nuevo">Nuevo</option>
+                    <option value="en curso">En curso</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="cerrado">Resuelto</option>
+                    <option value="ganado">Ganado</option>
+                    <option value="perdido">Perdido</option>
+                  </select>
+                  <Button onClick={() => changeStatus("cerrado")} className="hidden sm:inline-flex">
+                    <Check className="mr-1 h-4 w-4" />Resolver
+                  </Button>
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_280px]">
-                <Card className="p-3">
-                  <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
-                    <span>Hilo de mensajes</span>
-                    <span>Intent: {selected.intent}</span>
-                  </div>
-                  <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3">
-                    {selected.messages.map((m) => (
-                      <div key={m.id} className={`max-w-[85%] rounded-xl p-3 text-sm ${m.sender === "customer" ? "bg-white/10" : m.sender === "agent" ? "ml-auto bg-emerald-500/20" : "ml-auto bg-cyan-500/20"}`}>
-                        {m.agentName ? <p className="text-[10px] uppercase tracking-wide text-emerald-200/70">{m.agentName}</p> : null}
-                        <p>{m.content}</p>
-                        <p className="mt-1 text-[10px] text-zinc-300/80">{m.timestamp}</p>
+              <div className="flex-1 overflow-y-auto bg-black/10 p-4">
+                <div className="mx-auto max-w-3xl space-y-3">
+                  {selected.messages.map((message) => {
+                    const outgoing = message.sender === "agent";
+                    const system = message.sender === "system";
+                    if (system) {
+                      return (
+                        <p key={message.id} className="text-center text-[10px] text-zinc-500">{message.content}</p>
+                      );
+                    }
+                    return (
+                      <div key={message.id} className={`flex ${outgoing ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[82%] rounded-2xl px-3 py-2 text-sm ${
+                          outgoing
+                            ? "rounded-br-md bg-emerald-500/20 text-emerald-50"
+                            : "rounded-bl-md border border-white/10 bg-white/5 text-zinc-100"
+                        }`}>
+                          {outgoing && message.agentName ? <p className="mb-1 text-[10px] text-emerald-200/70">{message.agentName}</p> : null}
+                          <p>{message.content}</p>
+                          <p className="mt-1 text-right text-[9px] text-zinc-500">{message.timestamp}</p>
+                        </div>
                       </div>
-                    ))}
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 p-3">
+                {selected.suggestedReply ? (
+                  <div className="mb-2 flex items-start gap-2 rounded-xl border border-violet-300/20 bg-violet-500/5 p-2.5">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-200" />
+                    <p className="line-clamp-2 flex-1 text-xs text-zinc-300">{selected.suggestedReply}</p>
+                    <button onClick={() => setReply(selected.suggestedReply)} className="shrink-0 text-xs text-violet-200 hover:text-violet-100">Usar</button>
                   </div>
+                ) : null}
 
-                  <Card className="mt-3 border-cyan-300/30 bg-cyan-500/10 p-3 text-sm text-cyan-100">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="inline-flex items-center gap-2 font-medium"><Bot className="h-4 w-4" /> Respuesta sugerida</p>
-                      <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-100">IA detectó oportunidad comercial</span>
-                    </div>
-                    <p className="mt-1 text-zinc-100">{selected.suggestedReply}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button onClick={useSuggested} className="rounded-lg border border-cyan-300/40 bg-cyan-400/20 px-2 py-1 text-xs">Usar sugerencia</button>
-                      <span className="text-[10px] text-cyan-200/80">Confianza 92% · {selected.intent}</span>
-                    </div>
-                  </Card>
+                <div className="flex items-end gap-2">
+                  <button onClick={() => setToast("Adjunto listo para seleccionar (demo).")} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-zinc-400 hover:bg-white/10" title="Adjuntar">
+                    <Paperclip className="h-4 w-4" />
+                  </button>
+                  <textarea
+                    value={reply}
+                    onChange={(event) => setReply(event.target.value)}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        sendReply();
+                      }
+                    }}
+                    placeholder="Escribí una respuesta…"
+                    className="min-h-12 max-h-28 flex-1 resize-y rounded-xl border border-white/10 bg-white/5 p-3 text-sm outline-none focus:border-cyan-300/30"
+                  />
+                  <button
+                    onClick={() => {
+                      const base = reply || selected.suggestedReply;
+                      if (!base) return;
+                      setReply(base.length > 140 ? base.slice(0, 137) + "…" : base);
+                      setToast("Texto simplificado.");
+                    }}
+                    className="rounded-xl border border-violet-300/20 bg-violet-500/10 p-2.5 text-violet-200 hover:bg-violet-500/20"
+                    title="Mejorar texto"
+                  >
+                    <WandSparkles className="h-4 w-4" />
+                  </button>
+                  <Button onClick={sendReply} className="bg-emerald-500/30 hover:bg-emerald-500/40">
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
 
-                  <div className="mt-3 flex items-end gap-2">
-                    <textarea
-                      value={reply}
-                      onChange={(e) => setReply(e.target.value)}
-                      onKeyDown={(e) => {
-                        // expand /shortcut into template body when user types Tab or Enter
-                        if (e.key === "Tab" && reply.startsWith("/")) {
-                          const t = workspaceTemplates.find((x) => x.shortcut === reply.trim());
-                          if (t) { e.preventDefault(); setReply(t.body); }
-                        }
-                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                          e.preventDefault();
-                          sendReply();
-                        }
-                      }}
-                      placeholder="Escribí tu respuesta… o usá un atajo /cot, /fup, /post"
-                      className="min-h-16 flex-1 rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
-                    />
-                    <Button onClick={sendReply} className="bg-emerald-500/30 hover:bg-emerald-500/40">
-                      <Send className="mr-1 h-4 w-4" />Enviar
-                    </Button>
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-                    <span className="inline-flex items-center gap-1"><Wand className="h-3 w-3" /> Reformular con IA:</span>
-                    {[
-                      { tone: "Profesional", prefix: "Estimado/a, " },
-                      { tone: "Amable", prefix: "¡Hola! 😊 " },
-                      { tone: "Venta", prefix: "¡Tengo una oportunidad para vos! " },
-                      { tone: "Soporte", prefix: "Lamento la situación. " },
-                      { tone: "Breve", prefix: "" },
-                    ].map((opt) => (
+                {workspaceTemplates.length > 0 ? (
+                  <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                    {workspaceTemplates.map((template) => (
                       <button
-                        key={opt.tone}
-                        onClick={() => {
-                          const base = (reply || selected.suggestedReply || "").replace(/^¡?Hola[^,]*,?\s*/i, "");
-                          const out = opt.tone === "Breve" ? base.split(".").slice(0, 1).join(".") + (base.endsWith(".") ? "" : ".") : `${opt.prefix}${base}`;
-                          setReply(out);
-                          setToast(`Mensaje reformulado en tono ${opt.tone.toLowerCase()}.`);
-                        }}
-                        className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-0.5 text-violet-100 hover:bg-violet-500/20"
+                        key={template.id}
+                        onClick={() => setReply(template.body)}
+                        className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-zinc-300 hover:bg-white/10"
                       >
-                        {opt.tone}
+                        {template.name}
                       </button>
                     ))}
                   </div>
+                ) : null}
+              </div>
+            </Card>
+          ) : (
+            <Card className="flex min-h-[680px] items-center justify-center p-8 text-sm text-zinc-500">
+              Seleccioná una conversación.
+            </Card>
+          )}
 
-                  <div className="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-400">
-                    <button onClick={() => setReply((p) => `${p} 😊`)} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 hover:bg-white/10" title="Insertar emoji">
-                      <Smile className="h-3 w-3" />Emoji
-                    </button>
-                    <button onClick={() => setToast("Adjunto cargado (mock).")} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 hover:bg-white/10" title="Adjuntar archivo">
-                      <Paperclip className="h-3 w-3" />Adjuntar
-                    </button>
-                    <button onClick={() => setToast("Grabación de audio iniciada (mock).")} className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 hover:bg-white/10" title="Grabar audio">
-                      <Mic className="h-3 w-3" />Audio
-                    </button>
-                    <span className="ml-auto rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">⌘ + Enter para enviar</span>
+          {selected ? (
+            <div className="space-y-3">
+              <Card className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-zinc-500">Cliente</p>
+                    <p className="mt-1 font-semibold">{selectedContact?.name ?? selected.customerName}</p>
+                    <p className="text-xs text-zinc-500">{selectedContact?.business ?? selected.businessName}</p>
                   </div>
-
-                  {workspaceTemplates.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-zinc-400">Respuestas rápidas:</span>
-                      {workspaceTemplates.map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => insertTemplate(t.id)}
-                          className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-white/10"
-                          title={t.body}
-                        >
-                          {t.name}{t.shortcut ? <span className="ml-1 font-mono text-[10px] text-zinc-400">{t.shortcut}</span> : null}
-                        </button>
-                      ))}
-                      <Link href="/dashboard/plantillas" className="ml-auto text-[11px] text-cyan-200 hover:text-cyan-100">Editar plantillas →</Link>
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-[11px] text-zinc-500">
-                      Sin plantillas configuradas. <Link href="/dashboard/plantillas" className="text-cyan-200 underline">Crear una</Link>.
-                    </div>
-                  )}
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                    <Button onClick={() => changeStatus("en curso")}><Sparkles className="mr-1 h-4 w-4" />En curso</Button>
-                    <Button onClick={() => changeStatus("pendiente")}><Clock3 className="mr-1 h-4 w-4" />Pendiente</Button>
-                    <Button onClick={() => changeStatus("ganado")} className="border-emerald-300/40 bg-emerald-500/20 hover:bg-emerald-500/30"><CheckCircle2 className="mr-1 h-4 w-4" />Marcar ganado</Button>
-                    <Button onClick={() => changeStatus("perdido")} className="border-rose-300/40 bg-rose-500/20 hover:bg-rose-500/30"><XCircle className="mr-1 h-4 w-4" />Marcar perdido</Button>
-                    <Button onClick={() => changeStatus("cerrado")}>Cerrar</Button>
-                    <Button onClick={() => setToast(`Seguimiento agendado: ${selected.nextTask}`)}>Agendar follow-up</Button>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400">
+                    {selectedContact?.lifecycle ?? "lead"}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <p className="text-[10px] uppercase text-zinc-500">Origen</p>
+                    <p className="mt-1">{selectedContact?.source ?? "WhatsApp"}</p>
                   </div>
-
-                  <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2">
-                    <p className="px-1 text-[10px] uppercase tracking-wide text-zinc-500">Acciones rápidas</p>
-                    <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-5">
-                      <button
-                        onClick={() => {
-                          const target = workspaceAgents.find((a) => a.id !== selected.assignedAgentId);
-                          if (target) { assignAgent(target.id); setToast(`Conversación transferida a ${target.name}.`); }
-                          else setToast("No hay otro operador disponible para transferir.");
-                        }}
-                        className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 hover:bg-white/10"
-                      >
-                        Transferir
-                      </button>
-                      <button
-                        onClick={() => { updateConversation(selected.id, { priority: "alta", status: "en curso" }, { id: `ev-${Date.now()}`, type: "stage", label: "Escalada por urgencia", when: "Ahora" }); setToast("Conversación escalada y prioridad alta."); }}
-                        className="rounded-lg border border-rose-300/30 bg-rose-500/10 px-2 py-1.5 text-rose-100 hover:bg-rose-500/15"
-                      >
-                        Escalar
-                      </button>
-                      <button
-                        onClick={() => { addTag("urgente"); updateConversation(selected.id, { priority: "alta" }); setToast("Marcada como urgente."); }}
-                        className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-2 py-1.5 text-amber-100 hover:bg-amber-500/15"
-                      >
-                        Marcar urgente
-                      </button>
-                      <button
-                        onClick={() => {
-                          const due = new Date(Date.now() + 30 * 60 * 1000).toISOString().slice(0, 16);
-                          updateConversation(selected.id, { nextTask: `Tarea: ${selected.intent}`, nextTaskDueDate: due }, { id: `ev-${Date.now()}`, type: "note", label: "Tarea creada", when: "Ahora" });
-                          setToast("Tarea creada con vencimiento en 30 min.");
-                        }}
-                        className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-2 py-1.5 text-cyan-100 hover:bg-cyan-500/15"
-                      >
-                        Crear tarea
-                      </button>
-                      <button
-                        onClick={() => { setToast(`Lead '${selected.customerName}' creado en pipeline.`); updateConversation(selected.id, {}, { id: `ev-${Date.now()}`, type: "stage", label: "Lead generado desde conversación", when: "Ahora" }); }}
-                        className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1.5 text-emerald-100 hover:bg-emerald-500/15"
-                      >
-                        Crear lead
-                      </button>
-                    </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <p className="text-[10px] uppercase text-zinc-500">Score</p>
+                    <p className="mt-1 font-semibold text-emerald-200">{selected.leadScore}/100</p>
                   </div>
-                </Card>
+                </div>
 
-                <div className="space-y-3">
-                  <Card className="border-violet-300/30 bg-violet-500/5 p-3">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-violet-200"><Sparkles className="h-3.5 w-3.5" /> Resumen IA</p>
-                    <p className="mt-1 text-xs text-zinc-200">{selected.intent}. Cliente con score {selected.leadScore} y prioridad {selected.priority}. Recomendación: {selected.nextTask}.</p>
-                    <div className="mt-2 grid grid-cols-3 gap-1.5 text-[10px]">
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-1.5"><p className="text-zinc-500 uppercase tracking-wide">Score</p><p className={`mt-0.5 font-semibold ${selected.leadScore >= 70 ? "text-emerald-200" : selected.leadScore >= 50 ? "text-amber-200" : "text-rose-200"}`}>{selected.leadScore}/100</p></div>
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-1.5"><p className="text-zinc-500 uppercase tracking-wide">Sentimiento</p><p className="mt-0.5 font-semibold capitalize">{selected.priority === "alta" ? "neutral" : "positivo"}</p></div>
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-1.5"><p className="text-zinc-500 uppercase tracking-wide">Urgencia</p><p className={`mt-0.5 font-semibold capitalize ${selected.priority === "alta" ? "text-rose-200" : selected.priority === "media" ? "text-amber-200" : "text-zinc-300"}`}>{selected.priority}</p></div>
-                    </div>
-                  </Card>
+                <div className="mt-3">
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Responsable</p>
+                  <select
+                    value={selected.assignedAgentId ?? ""}
+                    onChange={(event) => assignAgent(event.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#0b1023] px-3 py-2 text-xs"
+                  >
+                    <option value="">Sin asignar</option>
+                    {workspaceAgents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>{agent.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-                  <Card className="p-3">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><User className="h-3.5 w-3.5" /> Perfil del cliente</p>
-                    <p className="mt-2 text-sm font-semibold">{selectedContact?.name}</p>
-                    <p className="text-xs text-zinc-400">{selectedContact?.business}</p>
-                    <p className="mt-1 text-xs text-zinc-400">Origen: {selectedContact?.source}</p>
-                    <p className="text-xs text-zinc-400">Lifecycle: {selectedContact?.lifecycle}</p>
-                    <p className="text-xs text-zinc-400">Conversaciones: {selectedContact?.totalConversations}</p>
-                    {selectedContact ? <Link href={`/dashboard/contactos?id=${selectedContact.id}`} className="mt-1 inline-flex items-center gap-1 text-[11px] text-cyan-200 hover:text-cyan-100">Ver contacto <ExternalLink className="h-3 w-3" /></Link> : null}
-                    {selected.estimatedOpportunity ? (
-                      <p className="mt-2 rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-100">Oportunidad: {selected.estimatedOpportunity}</p>
-                    ) : null}
-                  </Card>
+                <div className="mt-3">
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Etiquetas</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {selected.tags.map((tag) => (
+                      <span key={tag} className="rounded-full border border-violet-300/20 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-100">#{tag}</span>
+                    ))}
+                  </div>
+                  <input
+                    placeholder="+ etiqueta y Enter"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        addTag(event.currentTarget.value);
+                        event.currentTarget.value = "";
+                      }
+                    }}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
+                  />
+                </div>
+              </Card>
 
-                  {selectedLead ? (
-                    <Card className="p-3">
-                      <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><Sparkles className="h-3.5 w-3.5" /> Lead vinculado</p>
-                      <p className="mt-2 text-sm font-semibold">{selectedLead.name}</p>
-                      <p className="text-xs text-zinc-400">{selectedLead.business}</p>
-                      <p className="mt-1 inline-flex items-center gap-1 text-xs"><StatusBadge status={selectedLead.stage} /></p>
-                      <p className="mt-1 text-xs text-emerald-200">Valor estimado AR$ {selectedLead.estimatedValue.toLocaleString("es-AR")}</p>
-                      <p className="text-[11px] text-zinc-400">Próximo follow-up: {selectedLead.nextFollowUp}</p>
-                      <Link href={`/dashboard/leads?id=${selectedLead.id}`} className="mt-2 inline-flex items-center gap-1 text-[11px] text-cyan-200 hover:text-cyan-100">Abrir en pipeline <ExternalLink className="h-3 w-3" /></Link>
-                    </Card>
-                  ) : (
-                    <Card className="p-3 text-xs text-zinc-400">
-                      <p>Sin lead vinculado. Convertí esta conversación en lead desde el pipeline.</p>
-                    </Card>
-                  )}
+              <Card className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                    <MessageCircleMore className="h-4 w-4 text-emerald-300" />
+                    Oportunidad
+                  </p>
+                  {selectedLead ? <span className="text-[10px] text-emerald-200">{formatCurrency(selectedLead.estimatedValue)}</span> : null}
+                </div>
 
-                  <Card className="p-3">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><UserPlus className="h-3.5 w-3.5" /> Operador asignado</p>
-                    <select value={selected.assignedAgentId ?? ""} onChange={(e) => assignAgent(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-sm">
-                      <option value="" className="bg-[#0b1023]">Sin asignar</option>
-                      {workspaceAgents.map((a) => (
-                        <option key={a.id} value={a.id} className="bg-[#0b1023]">{a.name} · {a.role}</option>
+                {selectedLead ? (
+                  <div className="mt-3 space-y-2">
+                    <select
+                      value={selectedLead.stage}
+                      onChange={(event) => updateLead({ stage: event.target.value as typeof selectedLead.stage })}
+                      className="w-full rounded-xl border border-white/10 bg-[#0b1023] px-3 py-2 text-xs"
+                    >
+                      {stages.map((stage) => (
+                        <option key={stage.id} value={slugifyStage(stage.name)}>{stage.name}</option>
                       ))}
                     </select>
-                    <p className="mt-1 text-[10px] text-zinc-500">La asignación persiste en esta sesión.</p>
-                    {departments.length > 0 ? (
-                      <div className="mt-2">
-                        <p className="text-[10px] uppercase tracking-wide text-zinc-500">Departamento</p>
-                        <p className="mt-1 text-xs text-zinc-300">{departments.find((d) => d.id === conversationDepartment[selected.id])?.name ?? "Sin asignar"}</p>
-                      </div>
-                    ) : null}
-                  </Card>
-
-                  <Card className="p-3">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-400"><TagIcon className="h-3.5 w-3.5" /> Etiquetas</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {selected.tags.map((t) => (
-                        <button key={t} onClick={() => removeTag(t)} className="rounded-full border border-violet-300/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-100 hover:bg-violet-500/20">#{t} ✕</button>
-                      ))}
-                    </div>
+                    <label className="block text-[10px] uppercase tracking-wide text-zinc-500">Valor estimado</label>
                     <input
-                      placeholder="+ etiqueta y Enter"
-                      onKeyDown={(e) => { if (e.key === "Enter") { addTag(e.currentTarget.value); e.currentTarget.value = ""; } }}
-                      className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-xs"
+                      type="number"
+                      value={selectedLead.estimatedValue}
+                      onChange={(event) => updateLead({ estimatedValue: Number(event.target.value) || 0 })}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
                     />
-                  </Card>
-                </div>
-              </div>
-            </Card>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <Card className="p-4">
-                <p className="text-sm font-semibold inline-flex items-center gap-2"><CalendarClock className="h-4 w-4 text-emerald-300" /> Próxima tarea / follow-up</p>
-                <input value={selected.nextTask} onChange={(e) => updateNextTask(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-sm" />
-                <div className="mt-2 grid grid-cols-[1fr_auto] items-center gap-2">
-                  <input type="datetime-local" value={selected.nextTaskDueDate ?? ""} onChange={(e) => updateNextDue(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 p-2 text-sm" />
-                  <Button onClick={() => setToast("Recordatorio agendado.")}>Agendar</Button>
-                </div>
-                <p className="mt-2 text-[11px] text-zinc-500">Recomendación AI: priorizá esta conversación, puntaje {selected.leadScore} y {formatSla(selected.slaMinutesRemaining).text.toLowerCase()}.</p>
+                    <label className="block text-[10px] uppercase tracking-wide text-zinc-500">Próximo seguimiento</label>
+                    <input
+                      value={selectedLead.nextFollowUp}
+                      onChange={(event) => updateLead({ nextFollowUp: event.target.value })}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-black/20 p-3 text-xs text-zinc-400">
+                    <p>Esta conversación todavía no está en el pipeline.</p>
+                    <Button onClick={createOpportunity} className="mt-3 w-full bg-emerald-500/20 hover:bg-emerald-500/30">
+                      Crear oportunidad
+                    </Button>
+                  </div>
+                )}
               </Card>
+
               <Card className="p-4">
-                <p className="text-sm font-semibold inline-flex items-center gap-2"><StickyNote className="h-4 w-4 text-violet-300" /> Notas internas</p>
-                <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-line rounded-lg border border-white/10 bg-black/20 p-2 text-xs text-zinc-200">{selected.internalNotes || "Sin notas todavía."}</p>
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Agregá una nota interna…" className="mt-2 min-h-14 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-xs" />
+                <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                  <CalendarClock className="h-4 w-4 text-cyan-300" />
+                  Seguimiento
+                </p>
+                <input
+                  value={selected.nextTask}
+                  onChange={(event) => updateConversation(selected.id, { nextTask: event.target.value })}
+                  placeholder="Qué hay que hacer"
+                  className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
+                />
+                <input
+                  type="datetime-local"
+                  value={selected.nextTaskDueDate ?? ""}
+                  onChange={(event) => updateConversation(selected.id, { nextTaskDueDate: event.target.value })}
+                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
+                />
+              </Card>
+
+              <Card className="p-4">
+                <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                  <StickyNote className="h-4 w-4 text-amber-300" />
+                  Nota interna
+                </p>
+                {selected.internalNotes ? (
+                  <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-line rounded-lg bg-black/20 p-2 text-[11px] text-zinc-400">{selected.internalNotes}</p>
+                ) : null}
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  placeholder="Escribí una nota para el equipo"
+                  className="mt-2 min-h-16 w-full rounded-xl border border-white/10 bg-white/5 p-2 text-xs"
+                />
                 <Button onClick={saveNote} className="mt-2 w-full text-xs">Guardar nota</Button>
               </Card>
-            </div>
 
-            <Card className="p-4">
-              <p className="text-sm font-semibold inline-flex items-center gap-2"><Clock3 className="h-4 w-4 text-cyan-300" />Línea de tiempo</p>
-              <div className="mt-2 grid gap-2 md:grid-cols-2">
-                {selected.activity.map((ev) => (
-                  <div key={ev.id} className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs text-zinc-300">
-                    {ev.type === "sla" ? <AlertTriangle className="h-3.5 w-3.5 text-rose-300" /> : <Sparkles className="h-3.5 w-3.5 text-cyan-300" />}
-                    <div>
-                      <p>{ev.label}</p>
-                      <p className="text-[10px] text-zinc-500">{ev.when}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
-        ) : (
-          <Card className="p-8 text-center text-sm text-zinc-400">Seleccioná una conversación para ver el detalle.</Card>
-        )}
+              <Card className="border-violet-300/20 bg-violet-500/5 p-4">
+                <p className="inline-flex items-center gap-2 text-xs font-semibold text-violet-200">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Resumen
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                  {selected.intent}. Prioridad {selected.priority}. Siguiente paso sugerido: {selected.nextTask || "definir seguimiento"}.
+                </p>
+              </Card>
+            </div>
+          ) : (
+            <Card className="min-h-[680px] p-6" />
+          )}
+        </div>
       </div>
       <Toast message={toast} onClose={() => setToast("")} />
     </>
