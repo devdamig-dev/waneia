@@ -10,9 +10,7 @@ import {
   Search,
   Tag,
   TrendingUp,
-  UserRound,
 } from "lucide-react";
-import { teamMembers } from "@/data/saas-data";
 import { useCRMStore } from "@/lib/crm-store";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { Card } from "@/components/ui/card";
@@ -45,8 +43,8 @@ function initials(name: string) {
 }
 
 export function ContactsClient() {
-  const { activeWorkspaceId } = useWorkspace();
-  const { contacts, setContacts, conversations, leads } = useCRMStore();
+  const { activeWorkspaceId, teamMembers } = useWorkspace();
+  const { contacts, createContact: createContactRecord, updateContact: persistContact, conversations, leads } = useCRMStore();
   const [search, setSearch] = useState("");
   const [lifecycleFilter, setLifecycleFilter] = useState<ContactLifecycle | "todos">("todos");
   const [selectedId, setSelectedId] = useState("");
@@ -112,7 +110,7 @@ export function ContactsClient() {
   }, [contacts, activeWorkspaceId]);
 
   const updateContact = (id: string, patch: Partial<Contact>) => {
-    setContacts((previous) => previous.map((contact) => (contact.id === id ? { ...contact, ...patch } : contact)));
+    void persistContact(id, patch).catch((err) => setToast(err instanceof Error ? err.message : "No se pudo guardar el contacto."));
   };
 
   const addTag = (tag: string) => {
@@ -120,28 +118,25 @@ export function ContactsClient() {
     updateContact(selected.id, { tags: [...selected.tags, tag.trim()] });
   };
 
-  const createContact = () => {
-    const created: Contact = {
-      id: `ct-${Date.now()}`,
-      workspaceId: activeWorkspaceId,
-      name: draft.name || "Nuevo contacto",
-      phone: draft.phone || "—",
-      email: draft.email || undefined,
-      business: draft.business || undefined,
-      source: draft.source || "WhatsApp",
-      lifecycle: draft.lifecycle,
-      assignedAgentId: workspaceAgents[0]?.id ?? null,
-      optIn: true,
-      tags: [],
-      lastInteraction: "Recién agregado",
-      totalConversations: 0,
-    };
-    setContacts((previous) => [created, ...previous]);
-    setOpenNew(false);
-    setSelectedId(created.id);
-    setDrawerOpen(true);
-    setDraft({ name: "", phone: "", email: "", business: "", source: "WhatsApp", lifecycle: "nuevo" });
-    setToast("Contacto creado.");
+  const createContact = async () => {
+    try {
+      const id = await createContactRecord({
+        name: draft.name || "Nuevo contacto",
+        phone: draft.phone || "—",
+        email: draft.email || undefined,
+        business: draft.business || undefined,
+        source: draft.source || "WhatsApp",
+        lifecycle: draft.lifecycle,
+        assignedAgentId: workspaceAgents[0]?.id ?? null,
+      });
+      setOpenNew(false);
+      setSelectedId(id);
+      setDrawerOpen(true);
+      setDraft({ name: "", phone: "", email: "", business: "", source: "WhatsApp", lifecycle: "nuevo" });
+      setToast("Contacto creado.");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "No se pudo crear el contacto.");
+    }
   };
 
   const openContact = (id: string) => {
