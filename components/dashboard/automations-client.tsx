@@ -14,8 +14,9 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { automationRules as seedRules } from "@/data/mock-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
+import { createClient } from "@/lib/supabase/client";
+import type { Json, TablesUpdate } from "@/types/database";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
@@ -32,8 +33,6 @@ import {
 } from "@/types/entities";
 
 type Filter = "todas" | "activa" | "pausada" | "borrador";
-
-const STORAGE_KEY = "waneia.automations.v4";
 
 const triggerLabels: Record<AutomationTrigger["type"], string> = {
   "nuevo mensaje": "Llega un nuevo mensaje",
@@ -128,8 +127,8 @@ const starterPresets: Array<{
 
 export function AutomationsClient() {
   const { activeWorkspaceId } = useWorkspace();
-  const [rules, setRules] = useState<AutomationRule[]>(seedRules);
-  const [hydrated, setHydrated] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
+  const [rules, setRules] = useState<AutomationRule[]>([]);
   const [filter, setFilter] = useState<Filter>("todas");
   const [selectedId, setSelectedId] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -139,24 +138,67 @@ export function AutomationsClient() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setRules(JSON.parse(raw) as AutomationRule[]);
-    } catch {
-      // La demo puede funcionar sin persistencia.
-    } finally {
-      setHydrated(true);
+    if (!activeWorkspaceId) {
+      setRules([]);
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
-    } catch {
-      // Continuamos aunque localStorage no esté disponible.
-    }
-  }, [rules, hydrated]);
+    void supabase
+      .from("automations")
+      .select("*")
+      .eq("workspace_id", activeWorkspaceId)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) {
+          setToast(error.message);
+          return;
+        }
+
+        setRules((data ?? []).map((row) => {
+          const triggerValue =
+            typeof row.trigger_value === "object" &&
+            row.trigger_value !== null &&
+            !Array.isArray(row.trigger_value) &&
+            "value" in row.trigger_value
+              ? String((row.trigger_value as { value?: Json }).value ?? "")
+              : String(row.trigger_value ?? "");
+
+          const actions = Array.isArray(row.actions)
+            ? row.actions.map((action, index) => {
+                const item = action && typeof action === "object" && !Array.isArray(action)
+                  ? action as Record<string, Json | undefined>
+                  : {};
+                return {
+                  id: String(item.id ?? `action-${index}`),
+                  type: String(item.type ?? "crear tarea") as AutomationAction["type"],
+                  value: String(item.value ?? ""),
+                };
+              })
+            : [];
+
+          return {
+            id: row.id,
+            workspaceId: row.workspace_id,
+            name: row.name,
+            description: row.description ?? "",
+            status: row.status as AutomationStatus,
+            category: row.category as ConversationCategory,
+            trigger: {
+              type: row.trigger_type as AutomationTrigger["type"],
+              value: triggerValue,
+            },
+            conditions: [],
+            actions,
+            responseMessage: row.response_message ?? "",
+            triggeredCount: row.run_count,
+            replyRate: Number(row.reply_rate) || 0,
+            conversionEstimate: 0,
+            lastExecuted: row.last_executed_at ? new Date(row.last_executed_at).toLocaleString("es-AR") : "Sin ejecutar",
+            history: [],
+          } satisfies AutomationRule;
+        }));
+      });
+  }, [activeWorkspaceId, supabase]);
 
   const workspaceRules = useMemo(
     () =>
@@ -182,6 +224,26 @@ export function AutomationsClient() {
 
   const updateRule = (id: string, patch: Partial<AutomationRule>) => {
     setRules((previous) => previous.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)));
+
+    const dbPatch: TablesUpdate<"automations"> = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.description !== undefined) dbPatch.description = patch.description || null;
+    if (patch.status !== undefined) dbPatch.status = patch.status;
+    if (patch.category !== undefined) dbPatch.category = patch.category;
+    if (patch.trigger !== undefined) {
+      dbPatch.trigger_type = patch.trigger.type;
+      dbPatch.trigger_value = { value: patch.trigger.value };
+    }
+    if (patch.actions !== undefined) dbPatch.actions = patch.actions as unknown as Json;
+    if (patch.responseMessage !== undefined) dbPatch.response_message = patch.responseMessage || null;
+
+    void supabase
+      .from("automations")
+      .update(dbPatch)
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) setToast(error.message);
+      });
   };
 
   const openRule = (id: string) => {
@@ -218,11 +280,37 @@ export function AutomationsClient() {
     updateRule(selected.id, { actions: selected.actions.filter((action) => action.id !== actionId) });
   };
 
-  const duplicateRule = () => {
+  const duplicateRule = async () => {
     if (!selected) return;
+    const actions = selected.actions.map((action, index) => ({
+      ...action,
+      id: `ac-${Date.now()}-${index}`,
+    }));
+
+    const { data, error } = await supabase
+      .from("automations")
+      .insert({
+        workspace_id: selected.workspaceId,
+        name: `${selected.name} (copia)`,
+        description: selected.description || null,
+        status: "borrador",
+        category: selected.category,
+        trigger_type: selected.trigger.type,
+        trigger_value: { value: selected.trigger.value },
+        actions: actions as unknown as Json,
+        response_message: selected.responseMessage || null,
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      setToast(error?.message || "No se pudo duplicar la regla.");
+      return;
+    }
+
     const copy: AutomationRule = {
       ...selected,
-      id: `a-${Date.now()}`,
+      id: data.id,
       name: `${selected.name} (copia)`,
       status: "borrador",
       triggeredCount: 0,
@@ -230,19 +318,46 @@ export function AutomationsClient() {
       conversionEstimate: 0,
       lastExecuted: "Sin ejecutar",
       history: [],
-      conditions: selected.conditions.map((condition, index) => ({ ...condition, id: `co-${Date.now()}-${index}` })),
-      actions: selected.actions.map((action, index) => ({ ...action, id: `ac-${Date.now()}-${index}` })),
+      conditions: [],
+      actions,
     };
     setRules((previous) => [copy, ...previous]);
     setSelectedId(copy.id);
     setToast("Copia creada como borrador.");
   };
 
-  const createFromPreset = (presetId: string) => {
+  const createFromPreset = async (presetId: string) => {
     const preset = starterPresets.find((item) => item.id === presetId);
-    if (!preset) return;
+    if (!preset || !activeWorkspaceId) return;
+
+    const actions = preset.actions.map((action, index) => ({
+      ...action,
+      id: `ac-${Date.now()}-${index}`,
+    }));
+
+    const { data, error } = await supabase
+      .from("automations")
+      .insert({
+        workspace_id: activeWorkspaceId,
+        name: preset.title,
+        description: preset.description,
+        status: "borrador",
+        category: "consulta",
+        trigger_type: preset.trigger.type,
+        trigger_value: { value: preset.trigger.value },
+        actions: actions as unknown as Json,
+        response_message: preset.response || null,
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      setToast(error?.message || "No se pudo crear la automatización.");
+      return;
+    }
+
     const created: AutomationRule = {
-      id: `a-${Date.now()}`,
+      id: data.id,
       workspaceId: activeWorkspaceId,
       name: preset.title,
       description: preset.description,
@@ -250,7 +365,7 @@ export function AutomationsClient() {
       category: "consulta",
       trigger: preset.trigger,
       conditions: [],
-      actions: preset.actions.map((action, index) => ({ ...action, id: `ac-${Date.now()}-${index}` })),
+      actions,
       responseMessage: preset.response,
       triggeredCount: 0,
       replyRate: 0,
