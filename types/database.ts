@@ -550,7 +550,40 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      configure_whatsapp_credentials: {
+        Args: {
+          p_access_token: string
+          p_app_secret: string
+          p_display_phone_number: string
+          p_phone_number_id: string
+          p_verified_name: string
+          p_verify_token: string
+          p_waba_id: string
+          p_workspace_id: string
+        }
+        Returns: undefined
+      }
+      get_whatsapp_send_credentials: {
+        Args: { p_workspace_id: string }
+        Returns: {
+          access_token: string
+          phone_number_id: string
+        }[]
+      }
+      get_whatsapp_webhook_credentials: {
+        Args: { p_phone_number_id: string }
+        Returns: {
+          access_token: string
+          app_secret: string
+          workspace_id: string
+        }[]
+      }
+      match_whatsapp_verify_token: {
+        Args: { p_verify_token: string }
+        Returns: {
+          workspace_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
