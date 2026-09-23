@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -15,23 +16,33 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { automationRules, contacts } from "@/data/mock-data";
-import { teamMembers } from "@/data/saas-data";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
 import { useCRMStore } from "@/lib/crm-store";
+import { createClient } from "@/lib/supabase/client";
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 
 export function DashboardClient() {
-  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { conversations, leads } = useCRMStore();
+  const { activeWorkspaceId, activeWorkspace, teamMembers } = useWorkspace();
+  const { conversations, leads, contacts } = useCRMStore();
+  const supabase = useMemo(() => createClient(), []);
+  const [activeAutomationsCount, setActiveAutomationsCount] = useState(0);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    void supabase
+      .from("automations")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", activeWorkspaceId)
+      .eq("status", "activa")
+      .then(({ count }) => setActiveAutomationsCount(count ?? 0));
+  }, [activeWorkspaceId, supabase]);
 
   const wsConversations = conversations.filter((c) => c.workspaceId === activeWorkspaceId);
   const wsLeads = leads.filter((l) => l.workspaceId === activeWorkspaceId);
   const wsContacts = contacts.filter((c) => c.workspaceId === activeWorkspaceId);
   const wsAgents = teamMembers.filter((m) => m.workspaceId === activeWorkspaceId);
-  const activeAutomations = automationRules.filter((a) => a.workspaceId === activeWorkspaceId && a.status === "activa");
 
   const pending = wsConversations.filter((c) => ["nuevo", "pendiente"].includes(c.status));
   const unassigned = wsConversations.filter((c) => !c.assignedAgentId && !["ganado", "perdido", "cerrado"].includes(c.status));
@@ -70,7 +81,7 @@ export function DashboardClient() {
           <Link href="/dashboard/automatizaciones" className="group rounded-xl border border-violet-300/20 bg-violet-500/5 p-4 hover:bg-violet-500/10">
             <div className="flex items-center justify-between"><Workflow className="h-5 w-5 text-violet-200" /><ArrowRight className="h-4 w-4 opacity-40 group-hover:opacity-100" /></div>
             <p className="mt-3 font-semibold">Automatizaciones</p>
-            <p className="mt-1 text-xs text-zinc-400">{activeAutomations.length} reglas activas</p>
+            <p className="mt-1 text-xs text-zinc-400">{activeAutomationsCount} reglas activas</p>
           </Link>
           <Link href="/dashboard/analytics" className="group rounded-xl border border-white/10 bg-white/5 p-4 hover:bg-white/10">
             <div className="flex items-center justify-between"><Users className="h-5 w-5 text-zinc-200" /><ArrowRight className="h-4 w-4 opacity-40 group-hover:opacity-100" /></div>
