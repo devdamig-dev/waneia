@@ -194,6 +194,147 @@ async function processIncoming(workspaceId: string, value: Record<string, any>) 
   }
 }
 
+
+async function processMessageEchoes(workspaceId: string, value: Record<string, any>) {
+  for (const message of Array.isArray(value.message_echoes) ? value.message_echoes : []) {
+    const to = String(message.to ?? "");
+    const whatsappMessageId = String(message.id ?? "");
+    if (!to || !whatsappMessageId) continue;
+
+    const sentAt = message.timestamp
+      ? new Date(Number(message.timestamp) * 1000).toISOString()
+      : new Date().toISOString();
+
+    if (message.type === "edit" && message.original_message_id) {
+      await admin
+        .from("messages")
+        .update({
+          body: messageBody(message),
+          payload: { ...message, source: "smb_message_echoes", origin: "whatsapp_business_app" },
+        })
+        .eq("workspace_id", workspaceId)
+        .eq("whatsapp_message_id", String(message.original_message_id));
+      continue;
+    }
+
+    if (message.type === "revoke" && message.original_message_id) {
+      await admin
+        .from("messages")
+        .update({
+          body: "[mensaje eliminado desde WhatsApp Business]",
+          payload: { ...message, source: "smb_message_echoes", origin: "whatsapp_business_app" },
+        })
+        .eq("workspace_id", workspaceId)
+        .eq("whatsapp_message_id", String(message.original_message_id));
+      continue;
+    }
+
+    const body = messageBody(message);
+
+    let { data: contact } = await admin
+      .from("contacts")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("phone", to)
+      .maybeSingle();
+
+    if (!contact) {
+      const created = await admin
+        .from("contacts")
+        .insert({
+          workspace_id: workspaceId,
+          name: to,
+          phone: to,
+          source: "WhatsApp",
+          lifecycle: "nuevo",
+          opt_in: true,
+          last_interaction_at: sentAt,
+          metadata: { wa_id: to, coexistence: true },
+        })
+        .select("id")
+        .single();
+      if (created.error) throw created.error;
+      contact = created.data;
+    } else {
+      await admin
+        .from("contacts")
+        .update({ last_interaction_at: sentAt })
+        .eq("id", contact.id);
+    }
+
+    let { data: conversation } = await admin
+      .from("conversations")
+      .select("id,status")
+      .eq("workspace_id", workspaceId)
+      .eq("contact_id", contact.id)
+      .eq("channel", "whatsapp")
+      .in("status", ["nuevo", "en curso", "pendiente"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!conversation) {
+      const created = await admin
+        .from("conversations")
+        .insert({
+          workspace_id: workspaceId,
+          contact_id: contact.id,
+          channel: "whatsapp",
+          status: "en curso",
+          category: "consulta",
+          priority: "media",
+          intent: "WhatsApp Business App",
+          last_message: body,
+          last_message_at: sentAt,
+          whatsapp_thread_key: to,
+          raw_metadata: {
+            phone_number_id: value.metadata?.phone_number_id ?? null,
+            coexistence: true,
+          },
+        })
+        .select("id,status")
+        .single();
+      if (created.error) throw created.error;
+      conversation = created.data;
+    }
+
+    const inserted = await admin
+      .from("messages")
+      .upsert(
+        {
+          workspace_id: workspaceId,
+          conversation_id: conversation.id,
+          direction: "outbound",
+          sender_user_id: null,
+          whatsapp_message_id: whatsappMessageId,
+          message_type: String(message.type ?? "text"),
+          body,
+          status: "sent",
+          payload: {
+            ...message,
+            source: "smb_message_echoes",
+            origin: "whatsapp_business_app",
+          },
+          sent_at: sentAt,
+        },
+        { onConflict: "whatsapp_message_id", ignoreDuplicates: true },
+      );
+
+    if (inserted.error) throw inserted.error;
+
+    const updated = await admin
+      .from("conversations")
+      .update({
+        last_message: body,
+        last_message_at: sentAt,
+        status: conversation.status === "nuevo" ? "en curso" : conversation.status,
+      })
+      .eq("id", conversation.id);
+
+    if (updated.error) throw updated.error;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
 
@@ -260,8 +401,16 @@ Deno.serve(async (req: Request) => {
   try {
     for (const entry of entries) {
       for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
-        if (change.field !== "messages" || !change.value) continue;
-        await processIncoming(credential.workspace_id, change.value);
+        if (!change.value) continue;
+
+        if (change.field === "messages") {
+          await processIncoming(credential.workspace_id, change.value);
+          continue;
+        }
+
+        if (change.field === "smb_message_echoes") {
+          await processMessageEchoes(credential.workspace_id, change.value);
+        }
       }
     }
 
