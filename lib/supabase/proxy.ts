@@ -4,6 +4,10 @@ import type { Database } from "@/types/database";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 
 export async function updateSession(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/demo-manager")) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
