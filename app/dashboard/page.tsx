@@ -1,5 +1,5 @@
-import { DashboardClient } from "@/components/dashboard/dashboard-client";
+import { ManagerAnalyticsClient } from "@/components/dashboard/manager-analytics-client";
 
 export default function DashboardPage() {
-  return <DashboardClient />;
+  return <ManagerAnalyticsClient />;
 }
