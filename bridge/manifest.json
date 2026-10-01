@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Nexo WhatsApp Bridge",
+  "version": "0.1.0",
+  "description": "Capa de observación para analytics sobre WhatsApp Business Web. No envía mensajes.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Nexo WhatsApp Bridge"
+  }
+}
