@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nexo WhatsApp Bridge</title>
+  <style>
+    body{font-family:Inter,system-ui,sans-serif;background:#07101f;color:#f8fafc;margin:0;padding:32px}
+    main{max-width:760px;margin:auto}
+    .card{background:#0d1729;border:1px solid #243047;border-radius:20px;padding:24px}
+    h1{margin:0 0 8px;font-size:24px}.muted{color:#94a3b8;font-size:14px;line-height:1.5}
+    label{display:block;margin-top:18px;font-size:12px;color:#cbd5e1;text-transform:uppercase;letter-spacing:.08em}
+    input,textarea{width:100%;box-sizing:border-box;margin-top:8px;border-radius:12px;border:1px solid #334155;background:#08111f;color:#fff;padding:12px}
+    textarea{min-height:110px;resize:vertical}
+    button{margin-top:22px;border:0;border-radius:12px;background:#38bdf8;color:#07101f;font-weight:700;padding:12px 18px;cursor:pointer}
+    #status{margin-left:12px;font-size:13px;color:#86efac}
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Nexo WhatsApp Bridge</h1>
+    <p class="muted">Configuración de una sola vez por PC. El bridge observa contexto y etiquetas visibles en WhatsApp Web; no envía mensajes.</p>
+
+    <label for="deviceName">Nombre local del dispositivo</label>
+    <input id="deviceName" placeholder="Julieta · PC Ventas 1" />
+
+    <label for="endpoint">Endpoint de eventos</label>
+    <input id="endpoint" placeholder="https://PROJECT.supabase.co/functions/v1/bridge-events" />
+
+    <label for="deviceId">Device ID</label>
+    <input id="deviceId" placeholder="UUID provisionado por Nexo" />
+
+    <label for="secret">Secret</label>
+    <input id="secret" type="password" placeholder="Secret del dispositivo" />
+
+    <label for="labels">Etiquetas conocidas (una por línea)</label>
+    <textarea id="labels" placeholder="Julieta&#10;Para presupuestar&#10;Presupuesto enviado&#10;Offset"></textarea>
+
+    <label><input id="enabled" type="checkbox" style="width:auto;margin-right:8px" /> Bridge habilitado</label>
+
+    <button id="save">Guardar configuración</button><span id="status"></span>
+  </div>
+  <script src="options.js"></script>
+</main>
+</body>
+</html>
