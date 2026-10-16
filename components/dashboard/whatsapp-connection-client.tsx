@@ -1,327 +1,348 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  Copy,
-  KeyRound,
-  Loader2,
-  MessageCircleMore,
-  RefreshCw,
-  ShieldCheck,
-  Smartphone,
-  Webhook,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCircle2, ExternalLink, Loader2, MessageCircleMore, RefreshCw, ShieldCheck, Smartphone, Webhook } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
-import { Toast } from "@/components/ui/toast";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
-import { createClient } from "@/lib/supabase/client";
-import { SUPABASE_URL } from "@/lib/supabase/config";
+import {
+  loadFacebookSDK, parseSignupMessage, signupRequest,
+  type FacebookSDK, type SignupConfig, type SignupSession,
+} from "@/lib/meta/embedded-signup-client";
 
-type AccountState = {
+type Account = {
   phone_number_id: string;
   waba_id: string | null;
   display_phone_number: string | null;
   verified_name: string | null;
   status: string;
   webhook_subscribed: boolean;
-} | null;
-
-function createVerifyToken() {
-  if (typeof crypto === "undefined") return `waneia_${Date.now().toString(36)}`;
-  const values = new Uint32Array(4);
-  crypto.getRandomValues(values);
-  return `waneia_${Array.from(values).map((value) => value.toString(36)).join("")}`;
-}
+};
+type Readiness = SignupConfig & { ready: boolean; reason?: string; account?: Account | null };
+type Phase = "idle" | "preparing" | "prepared" | "authorizing" | "completing";
+type Attempt = {
+  workspaceId: string;
+  session: SignupSession;
+  code?: string;
+  assets?: { wabaId: string; phoneNumberId: string };
+  source?: MessageEventSource;
+  submitted: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+  controller: AbortController;
+};
 
 export function WhatsappConnectionClient() {
   const { activeWorkspaceId, activeWorkspace, refreshWorkspaces } = useWorkspace();
-  const supabase = useMemo(() => createClient(), []);
-  const webhookUrl = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
-
-  const [account, setAccount] = useState<AccountState>(null);
-  const [phoneNumberId, setPhoneNumberId] = useState("");
-  const [wabaId, setWabaId] = useState("");
-  const [displayPhone, setDisplayPhone] = useState("");
-  const [verifiedName, setVerifiedName] = useState("");
-  const [verifyToken, setVerifyToken] = useState("");
-  const [appSecret, setAppSecret] = useState("");
-  const [accessToken, setAccessToken] = useState("");
+  const [readinessState, setReadiness] = useState<(Readiness & { workspaceId: string }) | null>(null);
+  const readiness = readinessState?.workspaceId === activeWorkspaceId ? readinessState : null;
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState("");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [session, setSession] = useState<(SignupSession & { workspaceId: string }) | null>(null);
+  const workspaceRef = useRef(activeWorkspaceId);
+  const loadId = useRef(0);
+  const sdkRef = useRef<FacebookSDK | null>(null);
+  const attemptRef = useRef<Attempt | null>(null);
+  const prepareRef = useRef<AbortController | null>(null);
+  const refreshRef = useRef(refreshWorkspaces);
+  workspaceRef.current = activeWorkspaceId;
+  refreshRef.current = refreshWorkspaces;
 
-  const loadAccount = async () => {
-    if (!activeWorkspaceId) return;
+  const clearAttempt = useCallback(() => {
+    const attempt = attemptRef.current;
+    if (attempt?.timer) clearTimeout(attempt.timer);
+    attempt?.controller.abort();
+    attemptRef.current = null;
+  }, []);
+
+  const loadStatus = useCallback(async (workspaceId: string) => {
+    const requestId = ++loadId.current;
+    if (!workspaceId) { setLoading(false); return; }
     setLoading(true);
-    const { data, error } = await supabase
-      .from("whatsapp_accounts")
-      .select("phone_number_id,waba_id,display_phone_number,verified_name,status,webhook_subscribed")
-      .eq("workspace_id", activeWorkspaceId)
-      .maybeSingle();
-
-    if (error) {
-      setToast(error.message);
-      setLoading(false);
-      return;
+    setError("");
+    try {
+      const result = await signupRequest<Readiness>(`/api/meta/embedded-signup?workspace_id=${encodeURIComponent(workspaceId)}`);
+      if (workspaceRef.current === workspaceId && loadId.current === requestId) setReadiness({ ...result, workspaceId });
+    } catch (cause) {
+      if (workspaceRef.current === workspaceId && loadId.current === requestId) {
+        setReadiness(null);
+        setError(cause instanceof Error ? cause.message : "No se pudo consultar la conexión.");
+      }
+    } finally {
+      if (workspaceRef.current === workspaceId && loadId.current === requestId) setLoading(false);
     }
-
-    setAccount(data);
-    if (data) {
-      setPhoneNumberId(data.phone_number_id);
-      setWabaId(data.waba_id ?? "");
-      setDisplayPhone(data.display_phone_number ?? "");
-      setVerifiedName(data.verified_name ?? "");
-    }
-    if (!verifyToken) setVerifyToken(createVerifyToken());
-    setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
-    setAccount(null);
-    setPhoneNumberId("");
-    setWabaId("");
-    setDisplayPhone("");
-    setVerifiedName("");
-    setVerifyToken(createVerifyToken());
-    setAppSecret("");
-    setAccessToken("");
-    void loadAccount();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
+    clearAttempt();
+    prepareRef.current?.abort();
+    prepareRef.current = null;
+    setReadiness(null);
+    setSession(null);
+    setPhase("idle");
+    setError("");
+    setNotice("");
+    void loadStatus(activeWorkspaceId);
+    return () => {
+      ++loadId.current;
+      clearAttempt();
+      prepareRef.current?.abort();
+      prepareRef.current = null;
+    };
+  }, [activeWorkspaceId, clearAttempt, loadStatus]);
 
-  const copy = async (value: string, label: string) => {
+  const failAttempt = useCallback((attempt: Attempt, message: string) => {
+    if (attemptRef.current !== attempt || workspaceRef.current !== attempt.workspaceId) return;
+    clearAttempt();
+    setSession(null);
+    setPhase("idle");
+    setError(message);
+  }, [clearAttempt]);
+
+  const completeAttempt = useCallback(async (attempt: Attempt) => {
+    if (attemptRef.current !== attempt || workspaceRef.current !== attempt.workspaceId
+      || attempt.submitted || !attempt.code || !attempt.assets) return;
+    attempt.submitted = true;
+    if (attempt.timer) clearTimeout(attempt.timer);
+    setPhase("completing");
+    // This is the only operation that can persist a connection. Message events are hints,
+    // and the server independently verifies the token, the account and the phone ownership.
+    attempt.timer = setTimeout(() => failAttempt(attempt,
+      "La validación tardó más de lo esperado. Actualizá el estado antes de iniciar otra conexión."), 60_000);
     try {
-      await navigator.clipboard.writeText(value);
-      setToast(`${label} copiado.`);
+      const result = await signupRequest<{ ok: boolean; status: string; account: Account }>("/api/meta/embedded-signup/complete", {
+        method: "POST",
+        signal: attempt.controller.signal,
+        headers: { "X-Waneia-CSRF": attempt.session.csrfToken },
+        body: JSON.stringify({
+          workspace_id: attempt.workspaceId, sessionId: attempt.session.sessionId,
+          code: attempt.code, waba_id: attempt.assets.wabaId, phone_number_id: attempt.assets.phoneNumberId,
+        }),
+      });
+      if (attemptRef.current !== attempt || workspaceRef.current !== attempt.workspaceId) return;
+      if (!result.ok || !result.account) throw new Error("El servidor no confirmó que la conexión se haya guardado.");
+      clearAttempt();
+      setSession(null);
+      setPhase("idle");
+      setReadiness((current) => current ? { ...current, account: result.account } : current);
+      setNotice("Autorización guardada. La prueba de recepción y respuesta de mensajes sigue pendiente.");
+      void refreshRef.current();
+    } catch (cause) {
+      if (attempt.controller.signal.aborted) return;
+      failAttempt(attempt, cause instanceof Error ? cause.message : "No se pudo guardar la autorización de Meta.");
+    }
+  }, [clearAttempt, failAttempt]);
+
+  useEffect(() => {
+    const receiveMessage = (event: MessageEvent) => {
+      const attempt = attemptRef.current;
+      if (!attempt || attempt.submitted || attempt.workspaceId !== workspaceRef.current
+        || !event.source || event.source === window) return;
+      const message = parseSignupMessage(event.origin, event.data);
+      if (!message) return;
+      // FB.login does not expose a popup Window handle. Pin the source of the first valid
+      // Facebook session event for this active attempt; never accept a different source.
+      if (attempt.source && attempt.source !== event.source) return;
+      attempt.source = event.source;
+      if (message.kind === "cancel") { failAttempt(attempt, "Cancelaste la conexión en Meta. Podés iniciarla nuevamente."); return; }
+      if (message.kind === "error") { failAttempt(attempt, "Meta informó un error durante la conexión. Revisá el detalle en su ventana e intentá nuevamente."); return; }
+      if (message.kind === "unsupported") {
+        failAttempt(attempt, "Este flujo requiere una cuenta y un número de WhatsApp Cloud API. No se procesaron migraciones ni conexiones de WhatsApp Business App.");
+        return;
+      }
+      attempt.assets = { wabaId: message.wabaId, phoneNumberId: message.phoneNumberId };
+      void completeAttempt(attempt);
+    };
+    window.addEventListener("message", receiveMessage);
+    return () => window.removeEventListener("message", receiveMessage);
+  }, [completeAttempt, failAttempt]);
+
+  const prepareConnection = async () => {
+    if (!activeWorkspaceId || !readiness?.ready || phase !== "idle" || prepareRef.current) return;
+    const workspaceId = activeWorkspaceId;
+    const controller = new AbortController();
+    prepareRef.current = controller;
+    setPhase("preparing");
+    setError("");
+    setNotice("");
+    try {
+      const [newSession, sdk] = await Promise.all([
+        signupRequest<SignupSession>("/api/meta/embedded-signup/start", {
+          method: "POST", signal: controller.signal, body: JSON.stringify({ workspace_id: workspaceId }),
+        }),
+        loadFacebookSDK(readiness),
+      ]);
+      if (controller.signal.aborted || workspaceRef.current !== workspaceId) return;
+      if (!newSession.sessionId || !newSession.csrfToken
+        || newSession.appId !== readiness.appId || newSession.configId !== readiness.configId
+        || newSession.graphVersion !== readiness.graphVersion
+        || !Number.isFinite(Date.parse(newSession.expiresAt)) || Date.parse(newSession.expiresAt) <= Date.now()) {
+        throw new Error("No se pudo preparar una sesión válida. Actualizá el estado e intentá nuevamente.");
+      }
+      sdkRef.current = sdk;
+      setSession({ ...newSession, workspaceId });
+      setPhase("prepared");
+    } catch (cause) {
+      if (controller.signal.aborted || workspaceRef.current !== workspaceId) return;
+      setSession(null);
+      setPhase("idle");
+      setError(cause instanceof Error ? cause.message : "No se pudo preparar la conexión.");
+    } finally {
+      if (prepareRef.current === controller) prepareRef.current = null;
+    }
+  };
+
+  const launchSignup = () => {
+    if (!session || !sdkRef.current || phase !== "prepared" || !activeWorkspaceId || session.workspaceId !== activeWorkspaceId || attemptRef.current) return;
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      setSession(null);
+      setPhase("idle");
+      setError("La sesión de conexión venció. Prepará una nueva para continuar.");
+      return;
+    }
+    setError("");
+    setPhase("authorizing");
+    const attempt: Attempt = {
+      workspaceId: activeWorkspaceId, session, submitted: false, controller: new AbortController(),
+    };
+    attemptRef.current = attempt;
+    attempt.timer = setTimeout(() => failAttempt(attempt,
+      "La conexión no finalizó. Si no se abrió Meta, permití las ventanas emergentes y volvé a intentarlo."), 5 * 60_000);
+    try {
+      // Keep FB.login synchronous with this user click so browsers can open its popup.
+      sdkRef.current.login((response) => {
+        if (attemptRef.current !== attempt || workspaceRef.current !== attempt.workspaceId) return;
+        const code = response.authResponse?.code;
+        if (!code || typeof code !== "string") {
+          failAttempt(attempt, "Meta no devolvió una autorización. Podés volver a conectar la cuenta.");
+          return;
+        }
+        attempt.code = code;
+        if (!attempt.assets) {
+          if (attempt.timer) clearTimeout(attempt.timer);
+          attempt.timer = setTimeout(() => failAttempt(attempt,
+            "Meta devolvió la autorización pero no los datos de la cuenta y el número. La conexión no se guardó; iniciá nuevamente el flujo."), 20_000);
+        }
+        void completeAttempt(attempt);
+      }, {
+        config_id: session.configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: { setup: {} },
+      });
     } catch {
-      setToast("No se pudo copiar automáticamente.");
+      failAttempt(attempt, "No se pudo abrir Meta. Permití las ventanas emergentes e intentá nuevamente.");
     }
   };
 
-  const saveConnection = async () => {
-    if (!activeWorkspaceId) return;
-    if (!phoneNumberId.trim() || !verifyToken.trim() || !appSecret.trim() || !accessToken.trim()) {
-      setToast("Completá Phone Number ID, Verify Token, App Secret y Access Token.");
-      return;
-    }
-
-    setSaving(true);
-    const { error } = await supabase.rpc("configure_whatsapp_credentials", {
-      p_workspace_id: activeWorkspaceId,
-      p_phone_number_id: phoneNumberId.trim(),
-      p_waba_id: wabaId.trim(),
-      p_display_phone_number: displayPhone.trim(),
-      p_verified_name: verifiedName.trim(),
-      p_verify_token: verifyToken.trim(),
-      p_app_secret: appSecret.trim(),
-      p_access_token: accessToken.trim(),
-    });
-
-    if (error) {
-      setToast(error.message);
-      setSaving(false);
-      return;
-    }
-
-    setAppSecret("");
-    setAccessToken("");
-    setToast("Credenciales guardadas. Ahora validá el webhook en Meta.");
-    await loadAccount();
-    await refreshWorkspaces();
-    setSaving(false);
+  const cancelConnection = () => {
+    prepareRef.current?.abort();
+    prepareRef.current = null;
+    clearAttempt();
+    setSession(null);
+    setPhase("idle");
+    setNotice("Se canceló este intento en Waneia. Cerrá la ventana de Meta si sigue abierta.");
   };
 
-  const connected = account?.status === "connected" && account.webhook_subscribed;
+  const account = readiness?.account;
+  const subscribed = account?.webhook_subscribed === true;
+  const busy = phase === "preparing" || phase === "authorizing" || phase === "completing";
+  const statusTitle = loading ? "Consultando conexión de WhatsApp" : account
+    ? subscribed ? "Cuenta autorizada y suscripta" : "Cuenta guardada: conexión pendiente"
+    : "WhatsApp pendiente de conexión";
 
   return (
-    <>
-      <div className="space-y-4">
-        <Card className={`p-5 ${connected ? "border-emerald-300/25 bg-emerald-500/5" : "border-amber-300/20 bg-amber-500/5"}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${connected ? "border-emerald-300/20 bg-emerald-500/10" : "border-amber-300/20 bg-amber-500/10"}`}>
-                {connected ? <CheckCircle2 className="h-5 w-5 text-emerald-200" /> : <Smartphone className="h-5 w-5 text-amber-200" />}
-              </span>
-              <div>
-                <p className="font-semibold">{connected ? "WhatsApp conectado" : "WhatsApp pendiente de conexión"}</p>
-                <p className="mt-1 text-xs text-zinc-400">
-                  {connected
-                    ? "Los mensajes entrantes llegan al Inbox y las respuestas salen por Meta Cloud API."
-                    : "Guardá las credenciales y validá el webhook desde Meta Business."}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {account ? (
-                <span className={`rounded-full border px-2.5 py-1 text-[11px] ${connected ? "border-emerald-300/30 bg-emerald-500/10 text-emerald-100" : "border-amber-300/30 bg-amber-500/10 text-amber-100"}`}>
-                  {connected ? "Conectado" : "Pendiente"}
-                </span>
-              ) : null}
-              <Button onClick={() => void loadAccount()} disabled={loading}>
-                <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Actualizar
-              </Button>
+    <div className="space-y-4">
+      <Card className={`p-5 ${subscribed ? "border-emerald-300/25 bg-emerald-500/5" : "border-amber-300/20 bg-amber-500/5"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${subscribed ? "border-emerald-300/20 bg-emerald-500/10" : "border-amber-300/20 bg-amber-500/10"}`}>
+              {subscribed ? <CheckCircle2 className="h-5 w-5 text-emerald-200" /> : <Smartphone className="h-5 w-5 text-amber-200" />}
+            </span>
+            <div>
+              <p className="font-semibold">{statusTitle}</p>
+              <p className="mt-1 text-xs text-zinc-400">
+                {account ? "El estado de autorización no confirma por sí solo la entrega de mensajes." : `Conectá la cuenta de WhatsApp de ${activeWorkspace.name} desde Meta.`}
+              </p>
             </div>
           </div>
+          <Button onClick={() => void loadStatus(activeWorkspaceId)} disabled={loading || phase !== "idle" || !activeWorkspaceId}>
+            <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />Actualizar
+          </Button>
+        </div>
+      </Card>
+
+      {error ? <div role="alert" className="rounded-xl border border-red-300/25 bg-red-500/10 p-4 text-sm text-red-100">{error}</div> : null}
+      {notice ? <div role="status" className="rounded-xl border border-cyan-300/20 bg-cyan-500/10 p-4 text-sm text-cyan-100">{notice}</div> : null}
+
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="p-5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-cyan-200" />
+            <div><p className="font-semibold">1. Autorizá tu cuenta en Meta</p><p className="text-xs text-zinc-400">La cuenta y el número siguen perteneciendo a tu empresa.</p></div>
+          </div>
+          <ol className="mt-5 list-decimal space-y-3 pl-5 text-sm text-zinc-300">
+            <li>Ingresá con el usuario que administra el negocio en Meta.</li>
+            <li>Elegí la empresa, su cuenta de WhatsApp y el número que querés conectar.</li>
+            <li>Revisá y aceptá los permisos que solicita Waneia.</li>
+            <li>Volvé a esta pantalla para verificar el resultado.</li>
+          </ol>
+          <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-zinc-400">
+            Espacio seleccionado: <strong className="text-zinc-200">{activeWorkspace.name}</strong>. La autorización se guarda para este espacio. Si lo cambiás durante el proceso, iniciá una conexión nueva.
+          </div>
+          {!loading && readiness && !readiness.ready ? (
+            <div role="status" className="mt-4 rounded-xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+              {readiness.reason || "La conexión está pendiente de configuración del servicio. Contactá a quien administra Waneia."}
+            </div>
+          ) : null}
+          <Button
+            onClick={phase === "prepared" ? launchSignup : () => void prepareConnection()}
+            disabled={loading || !readiness?.ready || busy || !activeWorkspaceId}
+            className="mt-5 w-full bg-emerald-500/30 hover:bg-emerald-500/40"
+          >
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+            {phase === "preparing" ? "Preparando conexión…" : phase === "prepared" ? "Continuar con Meta"
+              : phase === "authorizing" ? "Completá la autorización en Meta…" : phase === "completing" ? "Validando autorización…"
+                : account ? "Volver a autorizar con Meta" : "Preparar conexión con Meta"}
+          </Button>
+          {phase === "prepared" ? <p className="mt-2 text-xs text-zinc-400">La sesión está lista. Continuá para abrir la ventana segura de Meta.</p> : null}
+          {phase !== "idle" && phase !== "completing" ? <Button onClick={cancelConnection} className="mt-2 w-full">Cancelar este intento</Button> : null}
+          <p className="mt-3 text-xs text-zinc-400">No necesitás copiar claves ni tokens. La autorización se procesa de forma segura en el servidor.</p>
         </Card>
 
-        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-4">
           <Card className="p-5">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-cyan-200" />
-              <div>
-                <p className="font-semibold">1. Credenciales de Meta</p>
-                <p className="text-xs text-zinc-500">Se guardan en una tabla privada; Waneia nunca vuelve a mostrar los secretos.</p>
-              </div>
+            <div className="flex items-center gap-2"><Webhook className="h-4 w-4 text-emerald-200" /><p className="font-semibold">2. Recepción de mensajes</p></div>
+            <p className="mt-4 text-sm text-zinc-300">Waneia solicita la suscripción de tu cuenta para recibir mensajes y actualizaciones de entrega.</p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-zinc-400">
+              {subscribed ? "Suscripción de la cuenta guardada. Falta comprobar la recepción real de un mensaje." : "La suscripción se verifica después de completar la autorización en Meta."}
             </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <FormField label="Phone Number ID" hint="ID numérico del teléfono en WhatsApp API Setup.">
-                <input
-                  value={phoneNumberId}
-                  onChange={(event) => setPhoneNumberId(event.target.value)}
-                  placeholder="123456789012345"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
-                />
-              </FormField>
-              <FormField label="WhatsApp Business Account ID">
-                <input
-                  value={wabaId}
-                  onChange={(event) => setWabaId(event.target.value)}
-                  placeholder="WABA ID"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
-                />
-              </FormField>
-              <FormField label="Número visible" hint="Sólo para mostrarlo en Waneia.">
-                <input
-                  value={displayPhone}
-                  onChange={(event) => setDisplayPhone(event.target.value)}
-                  placeholder="+54 11 ..."
-                  className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
-                />
-              </FormField>
-              <FormField label="Nombre verificado">
-                <input
-                  value={verifiedName}
-                  onChange={(event) => setVerifiedName(event.target.value)}
-                  placeholder={activeWorkspace.name}
-                  className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
-                />
-              </FormField>
-            </div>
-
-            <div className="mt-4 border-t border-white/10 pt-4">
-              <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
-                <KeyRound className="h-3.5 w-3.5 text-violet-200" />
-                Secretos
-              </p>
-              <div className="mt-3 space-y-3">
-                <FormField label="Meta App Secret" hint={account ? "Dejalo vacío si no querés reemplazarlo. Para reconfigurar, cargalo nuevamente junto con el token." : "Configuración de tu Meta App."}>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={appSecret}
-                    onChange={(event) => setAppSecret(event.target.value)}
-                    placeholder="••••••••••••••••"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 p-2.5 text-sm"
-                  />
-                </FormField>
-                <FormField label="Access Token permanente" hint="Usá un System User token con permisos de WhatsApp, no el token temporal de prueba.">
-                  <textarea
-                    value={accessToken}
-                    onChange={(event) => setAccessToken(event.target.value)}
-                    placeholder="EAAG..."
-                    className="min-h-20 w-full rounded-xl border border-white/10 bg-white/5 p-2.5 font-mono text-xs"
-                  />
-                </FormField>
-              </div>
-            </div>
-
-            <Button onClick={saveConnection} disabled={saving} className="mt-4 w-full bg-emerald-500/30 hover:bg-emerald-500/40">
-              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-1 h-4 w-4" />}
-              Guardar conexión
-            </Button>
           </Card>
-
-          <div className="space-y-4">
-            <Card className="p-5">
-              <div className="flex items-center gap-2">
-                <Webhook className="h-4 w-4 text-emerald-200" />
-                <div>
-                  <p className="font-semibold">2. Webhook en Meta</p>
-                  <p className="text-xs text-zinc-500">Configurá estos dos valores en WhatsApp → Configuration → Webhooks.</p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                <FormField label="Callback URL">
-                  <div className="flex gap-2">
-                    <input readOnly value={webhookUrl} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 p-2.5 font-mono text-[11px]" />
-                    <Button onClick={() => void copy(webhookUrl, "Callback URL")}><Copy className="h-4 w-4" /></Button>
-                  </div>
-                </FormField>
-                <FormField label="Verify Token" hint="Copialo antes de guardar. Si necesitás cambiarlo, generá otro y guardá de nuevo la conexión.">
-                  <div className="flex gap-2">
-                    <input
-                      value={verifyToken}
-                      onChange={(event) => setVerifyToken(event.target.value)}
-                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 p-2.5 font-mono text-[11px]"
-                    />
-                    <Button onClick={() => void copy(verifyToken, "Verify Token")}><Copy className="h-4 w-4" /></Button>
-                  </div>
-                </FormField>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-zinc-400">
-                Suscribí el campo <span className="font-mono text-zinc-200">messages</span>. El endpoint valida automáticamente la firma <span className="font-mono text-zinc-200">X-Hub-Signature-256</span> usando tu App Secret.
-              </div>
-            </Card>
-
-            <Card className="p-5">
-              <div className="flex items-center gap-2">
-                <MessageCircleMore className="h-4 w-4 text-cyan-200" />
-                <div>
-                  <p className="font-semibold">3. Prueba real</p>
-                  <p className="text-xs text-zinc-500">No hay mensaje mock: la prueba usa el número de Meta.</p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2 text-sm text-zinc-300">
-                <p>1. Validá Callback URL + Verify Token en Meta.</p>
-                <p>2. Suscribí <span className="font-mono">messages</span>.</p>
-                <p>3. Mandá “Hola” desde un celular al número conectado.</p>
-                <p>4. La conversación aparece en Inbox en tiempo real.</p>
-                <p>5. Respondé desde Waneia: el envío sale por Cloud API y se guarda el estado enviado/entregado/leído.</p>
-              </div>
-
-              <div className={`mt-4 rounded-xl border p-3 text-xs ${connected ? "border-emerald-300/20 bg-emerald-500/5 text-emerald-100" : "border-amber-300/20 bg-amber-500/5 text-amber-100"}`}>
-                {connected
-                  ? "Webhook validado. Ya podés hacer la prueba end-to-end."
-                  : account
-                    ? "Credenciales guardadas. Falta que Meta valide el webhook."
-                    : "Todavía no hay credenciales guardadas para este workspace."}
-              </div>
-            </Card>
-          </div>
+          <Card className="p-5">
+            <div className="flex items-center gap-2"><MessageCircleMore className="h-4 w-4 text-cyan-200" /><p className="font-semibold">3. Probá la conversación</p></div>
+            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-zinc-300">
+              <li>Desde un celular autorizado para la prueba, escribí al número conectado.</li>
+              <li>Buscá el mensaje recibido en Conversaciones.</li>
+              <li>Respondé desde Waneia y verificá la recepción en el celular.</li>
+              <li>Revisá los estados de entrega que informe Meta.</li>
+            </ol>
+            <p className="mt-4 text-xs text-zinc-400">La prueba requiere mensajes reales. Los estados pueden variar según la disponibilidad y privacidad del destinatario.</p>
+          </Card>
         </div>
-
-        {account ? (
-          <Card className="p-5">
-            <p className="text-sm font-semibold">Conexión guardada</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div><p className="text-[10px] uppercase text-zinc-500">Phone Number ID</p><p className="mt-1 text-sm">{account.phone_number_id}</p></div>
-              <div><p className="text-[10px] uppercase text-zinc-500">Número</p><p className="mt-1 text-sm">{account.display_phone_number || "—"}</p></div>
-              <div><p className="text-[10px] uppercase text-zinc-500">Nombre</p><p className="mt-1 text-sm">{account.verified_name || "—"}</p></div>
-              <div><p className="text-[10px] uppercase text-zinc-500">Webhook</p><p className="mt-1 text-sm">{account.webhook_subscribed ? "Validado" : "Pendiente"}</p></div>
-            </div>
-          </Card>
-        ) : null}
       </div>
 
-      <Toast message={toast} onClose={() => setToast("")} />
-    </>
+      {account ? (
+        <Card className="p-5">
+          <p className="text-sm font-semibold">Cuenta guardada para {activeWorkspace.name}</p>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div><dt className="text-[10px] uppercase text-zinc-400">Número</dt><dd className="mt-1 text-sm">{account.display_phone_number || "Pendiente"}</dd></div>
+            <div><dt className="text-[10px] uppercase text-zinc-400">Nombre verificado</dt><dd className="mt-1 text-sm">{account.verified_name || "Pendiente"}</dd></div>
+            <div><dt className="text-[10px] uppercase text-zinc-400">Cuenta de WhatsApp</dt><dd className="mt-1 break-all text-sm">{account.waba_id || "Pendiente"}</dd></div>
+            <div><dt className="text-[10px] uppercase text-zinc-400">Suscripción</dt><dd className="mt-1 text-sm">{subscribed ? "Guardada" : "Pendiente"}</dd></div>
+          </dl>
+        </Card>
+      ) : null}
+    </div>
   );
 }

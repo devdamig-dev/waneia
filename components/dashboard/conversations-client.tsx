@@ -201,7 +201,7 @@ export function ConversationsClient() {
     setReply("");
     try {
       await sendMessage(selected.id, body);
-      setToast("Mensaje guardado en el Inbox.");
+      setToast("WhatsApp aceptó el mensaje.");
     } catch (err) {
       setReply(body);
       setToast(err instanceof Error ? err.message : "No se pudo enviar el mensaje.");

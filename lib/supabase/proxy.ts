@@ -5,6 +5,11 @@ import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
+
+  // The status route exposes only public setup diagnostics before authentication;
+  // its handler verifies the user and workspace role before returning any account.
+  if (request.method === "GET" && pathname === "/api/meta/embedded-signup") return response;
 
   const supabase = createServerClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     cookies: {
@@ -22,7 +27,6 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
-  const pathname = request.nextUrl.pathname;
   const isPublic =
     pathname === "/login" ||
     pathname.startsWith("/auth/") ||
@@ -30,6 +34,13 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/api/whatsapp/webhook");
 
   if (!claims && !isPublic) {
+    if (pathname.startsWith("/api/meta/")) {
+      return NextResponse.json({
+        ok: false,
+        error: { code: "AUTHENTICATION_REQUIRED", message: "Iniciá sesión en Waneia para conectar WhatsApp." },
+        reason: "Iniciá sesión en Waneia para conectar WhatsApp.",
+      }, { status: 401, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";

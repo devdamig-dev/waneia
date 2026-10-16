@@ -80,13 +80,14 @@ function dbMessageToEntity(row: {
   direction: string;
   body: string | null;
   sent_at: string;
+  status: string;
 }): Message {
   return {
     id: row.id,
     sender: row.direction === "outbound" ? "agent" : row.direction === "system" ? "system" : "customer",
     content: row.body ?? "",
     timestamp: new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit" }).format(new Date(row.sent_at)),
-    read: true,
+    read: row.status === "read",
   };
 }
 
@@ -306,53 +307,45 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = useCallback(async (conversationId: string, body: string) => {
     const conversation = conversations.find((item) => item.id === conversationId);
-    if (!conversation || !body.trim()) return;
+    if (!conversation || conversation.workspaceId !== activeWorkspaceId) {
+      throw new Error("La conversación no pertenece al espacio activo. Actualizá el Inbox antes de enviar.");
+    }
+    if (!body.trim()) throw new Error("Escribí un mensaje antes de enviar.");
 
-    const { data: whatsappAccount } = await supabase
+    const { data: whatsappAccount, error: accountError } = await supabase
       .from("whatsapp_accounts")
-      .select("status")
+      .select("status,webhook_subscribed")
       .eq("workspace_id", conversation.workspaceId)
       .maybeSingle();
 
-    if (whatsappAccount?.status === "connected") {
-      const { error: functionError } = await supabase.functions.invoke("whatsapp-send", {
-        body: {
-          workspace_id: conversation.workspaceId,
-          conversation_id: conversation.id,
-          text: body.trim(),
-        },
-      });
-
-      if (functionError) throw new Error(functionError.message || "No se pudo enviar el mensaje por WhatsApp.");
-      await refresh();
-      return;
+    if (accountError) throw new Error("No se pudo verificar la cuenta de WhatsApp. No se envió el mensaje.");
+    if (!whatsappAccount?.webhook_subscribed || !["pending_webhook", "connected"].includes(whatsappAccount.status)) {
+      throw new Error("La cuenta de WhatsApp todavía no está autorizada y suscripta. Completá la conexión antes de enviar mensajes.");
     }
 
-    const now = new Date().toISOString();
-    const { error: messageError } = await supabase.from("messages").insert({
-      workspace_id: conversation.workspaceId,
-      conversation_id: conversation.id,
-      direction: "outbound",
-      sender_user_id: currentUserId || null,
-      body: body.trim(),
-      status: "sent",
-      sent_at: now,
+    // The server revalidates credentials and subscription and owns message persistence.
+    // An unavailable account must never fall back to a locally fabricated sent message.
+    const { data: result, error: functionError } = await supabase.functions.invoke("whatsapp-send", {
+      body: {
+        workspace_id: conversation.workspaceId,
+        conversation_id: conversation.id,
+        text: body.trim(),
+      },
     });
-    if (messageError) throw new Error(messageError.message);
 
-    const { error: conversationError } = await supabase
-      .from("conversations")
-      .update({
-        last_message: body.trim(),
-        last_message_at: now,
-        status: conversation.status === "nuevo" ? "en curso" : conversation.status,
-        assigned_user_id: conversation.assignedAgentId || currentUserId || null,
-      })
-      .eq("id", conversation.id);
-
-    if (conversationError) throw new Error(conversationError.message);
+    if (functionError) {
+      let message = "No se pudo confirmar el envío por WhatsApp. Revisá el estado de la conversación antes de reintentar.";
+      if (functionError.context instanceof Response) {
+        const detail = await functionError.context.clone().json().catch(() => null);
+        if (typeof detail?.message === "string") message = detail.message;
+      }
+      throw new Error(message);
+    }
+    if (result?.ok !== true || typeof result.message_id !== "string" || !result.message_id.trim()) {
+      throw new Error("El servidor no confirmó un identificador de mensaje de Meta. Revisá el Inbox antes de reintentar; no se registró un envío desde el navegador.");
+    }
     await refresh();
-  }, [conversations, currentUserId, refresh, supabase]);
+  }, [activeWorkspaceId, conversations, refresh, supabase]);
 
   const createLeadFromConversation = useCallback(async (conversation: Conversation) => {
     const existing = leads.find(
